@@ -18,8 +18,16 @@
  * .github/prompts/new-test.prompt.md tự động tham chiếu như nguồn grounding ưu
  * tiên CAO NHẤT (cao hơn ui_components.yaml tĩnh, vì đây là DOM thật vừa quan sát).
  *
+ * NGOÀI reverse-grounding, script còn TỰ ĐỘNG đóng gói một Page Object Model
+ * chuẩn (TypeScript) tại tests/pages/<PascalCaseKey>Page.ts, bóc tách trực tiếp
+ * từ recording (locator dedup + method theo action đã ghi). Nhờ đó Tester chỉ cần
+ * chạy 1 lệnh `npm run sync-specs <KEY>` thay vì gọi thêm bước sinh POM riêng.
+ *
  * Usage:
- *   node scripts/sync-specs.js KFWT-1161          # sync 1 recording
+ *   node scripts/sync-specs.js KFWT-1161          # sync recording + đóng gói POM
+ *   node scripts/sync-specs.js ADMINISTRATION     # (vd) sync + tests/pages/AdministrationPage.ts
+ *   node scripts/sync-specs.js KFWT-1161 --no-pom # chỉ reverse-grounding, không sinh POM
+ *   node scripts/sync-specs.js KFWT-1161 --force-pom # ghi đè POM nếu đã tồn tại
  *   node scripts/sync-specs.js --all              # sync mọi recording trong tests/recordings/
  *   npm run sync-specs KFWT-1161
  *   npm run sync-specs -- --all
@@ -45,8 +53,16 @@ const LIVE_SPEC_REL = 'docs/specs/codebase/live_grounded_components.yaml';
  */
 function parseTicketKey(arg) {
   if (!arg) return null;
-  const cleaned = String(arg).replace(/^https?:\/\/[^\/]+\/browse\//i, '').replace(/[\/\\]+$/, '').trim();
-  const match = cleaned.match(/([A-Za-z0-9_-]+)/);
+  let value = String(arg).trim();
+  if (!value) return null;
+  // Strip URL query/hash and trailing slashes, then keep only the last path
+  // segment (e.g. https://jira/browse/KFWT-1161 -> KFWT-1161). For recording
+  // filenames like `ADMINISTRATION.recording.ts` the match stops at the dot.
+  value = value.split(/[?#]/)[0].replace(/\/+$/, '');
+  const segment = value.split('/').pop();
+  // Accept classic ticket keys (KFWT-1161) as well as alphanumeric module
+  // names / custom keys (ADMINISTRATION, ASAP-NAVIGATION, ...).
+  const match = segment.match(/([A-Za-z0-9_-]+)/);
   return match ? match[1].toUpperCase() : null;
 }
 
@@ -279,6 +295,424 @@ function extractEntryUrl(source) {
   return m ? m[2] : null;
 }
 
+const PAGES_DIR = path.join(ROOT_DIR, 'tests', 'pages');
+
+/**
+ * Chuẩn hoá KEY (ticket/module) -> tên class Page Object dạng PascalCase + "Page".
+ *   ADMINISTRATION   -> AdministrationPage
+ *   KFWT-1161        -> Kfwt1161Page
+ *   ASAP-NAVIGATION  -> AsapNavigationPage
+ */
+function toPascalCasePageName(key) {
+  const parts = String(key || '')
+    .trim()
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+  const pascal = parts
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+    .join('');
+  return `${pascal || 'Recorded'}Page`;
+}
+
+/**
+ * Escape 1 giá trị thành TypeScript single-quoted string literal an toàn.
+ */
+function tsString(value) {
+  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+/**
+ * Chuyển 1 chuỗi bất kỳ ('Add Supplier', 'X-Requested-By Header*') thành
+ * identifier camelCase hợp lệ ('addSupplier', 'xRequestedByHeader').
+ */
+function camelIdentifier(str) {
+  const words = String(str || '')
+    .replace(/\*/g, ' ')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+  if (!words.length) return '';
+  return words
+    .map((w, i) => {
+      const lower = w.toLowerCase();
+      return i === 0 ? lower : lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join('');
+}
+
+/**
+ * Hậu tố member name theo loại locator/role để đọc dễ hiểu (saveButton, supplierInput...).
+ */
+function roleSuffix(comp) {
+  if (comp.locatorType === 'role') {
+    switch (comp.role) {
+      case 'button':
+        return 'Button';
+      case 'textbox':
+      case 'spinbutton':
+      case 'searchbox':
+        return 'Input';
+      case 'link':
+        return 'Link';
+      case 'tab':
+        return 'Tab';
+      case 'checkbox':
+        return 'Checkbox';
+      case 'radio':
+        return 'Radio';
+      case 'option':
+        return 'Option';
+      case 'gridcell':
+        return 'Cell';
+      case 'columnheader':
+        return 'Column';
+      case 'combobox':
+        return 'Select';
+      default:
+        return comp.role.charAt(0).toUpperCase() + comp.role.slice(1);
+    }
+  }
+  if (comp.locatorType === 'text') return 'Text';
+  if (comp.locatorType === 'label' || comp.locatorType === 'placeholder') return 'Input';
+  if (comp.locatorType === 'css') return 'Element';
+  return 'Locator';
+}
+
+/**
+ * Tên member gợi nhớ cho 1 locator (chưa đảm bảo unique).
+ */
+function deriveBaseName(comp) {
+  let base = comp.name || comp.text || '';
+  if (!base && comp.css) {
+    const id = comp.primefacesId || comp.css;
+    const seg = id
+      .replace(/\[id=|["'\]]/g, '')
+      .split(/[:.\s>#[\]]+/)
+      .filter(Boolean)
+      .pop();
+    base = seg || 'element';
+  }
+  const ident = camelIdentifier(base) || 'locator';
+  return ident + roleSuffix(comp);
+}
+
+function uniqueName(base, used) {
+  let name = base || 'locator';
+  if (/^[0-9]/.test(name)) name = `n${name}`;
+  let candidate = name;
+  let i = 2;
+  while (used.has(candidate)) {
+    candidate = `${name}${i}`;
+    i += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+/**
+ * Đọc phần đuôi của 1 getBy*(...) call: option object { name, exact } (nếu có)
+ * rồi tới dấu ")" đóng. Trả về endIdx (sau ")") hoặc -1 nếu không "sạch".
+ */
+function consumeGetByTail(portion, startIdx, comp) {
+  const opts = readOptions(portion, startIdx);
+  if (opts.options) {
+    if (opts.options.name != null) comp.name = opts.options.name;
+    if (opts.options.exact === true) comp.exact = true;
+  }
+  let i = opts.endIdx;
+  while (i < portion.length && /[\s,]/.test(portion[i])) i++;
+  if (portion[i] !== ')') return -1;
+  return i + 1;
+}
+
+/**
+ * Phân tích MỘT locator "sạch" (đúng 1 lời gọi engine, không .filter()/.nth()/...)
+ * ở đầu chuỗi `portion`. Trả về { comp, endIdx } hoặc null nếu không sạch/không phù hợp.
+ */
+function parseCleanLocator(portion) {
+  const m = portion.match(
+    /^(getByRole|getByLabel|getByPlaceholder|getByText|getByTestId|getByTitle|getByAltText|locator)\(/
+  );
+  if (!m) return null;
+  const engine = m[1];
+  const strArg = readStringArg(portion, m[0].length);
+  if (!strArg) return null;
+
+  const comp = {
+    locatorType: null,
+    role: null,
+    name: null,
+    text: null,
+    css: null,
+    primefacesId: null,
+    exact: false,
+    isFrame: false
+  };
+
+  if (engine === 'locator') {
+    const css = strArg.value;
+    // Chỉ nhận CSS dựa trên id (#... hoặc [id="..."]) — bỏ qua selector class/combinator
+    // của codegen (.ui-chkbox-box, .ui-g-1 > a...) vì chúng là "nhiễu" không bền vững.
+    if (!/^\[id=/.test(css) && !/^#/.test(css)) return null;
+    let i = strArg.endIdx;
+    while (i < portion.length && /\s/.test(portion[i])) i++;
+    if (portion[i] !== ')') return null;
+    comp.locatorType = 'css';
+    comp.css = css;
+    comp.primefacesId = extractPrimefacesId(css);
+    return { comp, endIdx: i + 1 };
+  }
+
+  comp.locatorType = GET_BY_MAP[engine];
+  if (engine === 'getByRole') {
+    comp.role = strArg.value;
+  } else if (engine === 'getByText') {
+    comp.text = strArg.value;
+  } else {
+    comp.name = strArg.value;
+  }
+  const endIdx = consumeGetByTail(portion, strArg.endIdx, comp);
+  if (endIdx === -1) return null;
+  return { comp, endIdx };
+}
+
+// Action Playwright -> mẫu sinh method trong POM.
+const POM_ACTION_META = {
+  click: { param: null },
+  dblclick: { param: null },
+  check: { param: null },
+  uncheck: { param: null },
+  hover: { param: null },
+  focus: { param: null },
+  tap: { param: null },
+  fill: { param: { name: 'value', type: 'string' } },
+  type: { param: { name: 'value', type: 'string' } },
+  press: { param: { name: 'key', type: 'string' } },
+  selectOption: { param: { name: 'value', type: 'string' } }
+};
+
+/**
+ * Bóc tách "mô hình POM" từ 1 recording: danh sách locator sạch (dedup) kèm frame
+ * context và tập action đã ghi lại.
+ */
+function extractPomModel(source) {
+  const frameMatch = source.match(/iframe\[title="([^"]+)"\]/);
+  const frameTitle = frameMatch ? frameMatch[1] : null;
+  const lines = source.split(/\r?\n/);
+  const bySig = new Map();
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!/^await\s+page\./.test(line)) continue;
+
+    const isFrame = /contentFrame\(\)/.test(line) && /iframe\[title=/.test(line);
+    let portion;
+    if (isFrame) {
+      const idx = line.lastIndexOf('.contentFrame()');
+      portion = line.slice(idx + '.contentFrame()'.length).replace(/^\./, '');
+    } else {
+      portion = line.replace(/^await\s+page\./, '');
+    }
+    portion = portion.replace(/;\s*$/, '').trim();
+
+    const parsed = parseCleanLocator(portion);
+    if (!parsed) continue;
+
+    const rest = portion.slice(parsed.endIdx);
+    const actionMatch = rest.match(
+      /^\.(click|dblclick|fill|type|press|check|uncheck|selectOption|hover|focus|tap)\s*\(/
+    );
+    if (!actionMatch) continue; // còn chain (.filter/.nth/.getBy...) -> nhiễu, bỏ qua
+
+    const action = actionMatch[1];
+    const argStart = parsed.endIdx + actionMatch[0].length;
+    const strArg = readStringArg(portion, argStart);
+    const value = strArg ? strArg.value : null;
+
+    const comp = parsed.comp;
+    comp.isFrame = isFrame;
+    const sig = [
+      isFrame ? 'F' : 'P',
+      comp.locatorType,
+      comp.role || '',
+      comp.name || comp.text || '',
+      comp.css || ''
+    ].join('|');
+
+    let entry = bySig.get(sig);
+    if (!entry) {
+      entry = { ...comp, actions: new Set(), values: [] };
+      bySig.set(sig, entry);
+    }
+    entry.actions.add(action);
+    if (value != null && value !== '' && !entry.values.includes(value)) {
+      entry.values.push(value);
+    }
+  }
+
+  const locators = Array.from(bySig.values());
+  const used = new Set(['page', 'frame', 'constructor']);
+  for (const l of locators) {
+    l.member = uniqueName(deriveBaseName(l), used);
+  }
+
+  return {
+    frameTitle,
+    hasFrame: locators.some((l) => l.isFrame),
+    locators
+  };
+}
+
+/**
+ * Sinh biểu thức locator (không kèm prefix `this.page`/`this.frame`).
+ */
+function locatorExpr(comp) {
+  const t = comp.locatorType;
+  if (t === 'role') {
+    let s = `.getByRole(${tsString(comp.role)}`;
+    if (comp.name != null || comp.exact) {
+      const parts = [];
+      if (comp.name != null) parts.push(`name: ${tsString(comp.name)}`);
+      if (comp.exact) parts.push('exact: true');
+      s += `, { ${parts.join(', ')} }`;
+    }
+    return `${s})`;
+  }
+  if (t === 'text') {
+    return comp.exact
+      ? `.getByText(${tsString(comp.text)}, { exact: true })`
+      : `.getByText(${tsString(comp.text)})`;
+  }
+  if (t === 'css') {
+    return `.locator(${tsString(comp.css)})`;
+  }
+  const map = {
+    label: 'getByLabel',
+    placeholder: 'getByPlaceholder',
+    testId: 'getByTestId',
+    title: 'getByTitle',
+    altText: 'getByAltText'
+  };
+  const fn = map[t] || 'getByLabel';
+  return `.${fn}(${tsString(comp.name)}${comp.exact ? ', { exact: true }' : ''})`;
+}
+
+function pascal(member) {
+  return member.charAt(0).toUpperCase() + member.slice(1);
+}
+
+/**
+ * Render toàn bộ nội dung file Page Object Model (TypeScript, strict-safe).
+ */
+function renderPomClass(pageClass, key, recordingRel, model) {
+  const { hasFrame, frameTitle, locators } = model;
+  const pageLocators = locators.filter((l) => !l.isFrame);
+  const frameLocators = locators.filter((l) => l.isFrame);
+
+  const imports = ['Page'];
+  if (hasFrame) imports.push('FrameLocator');
+  imports.push('Locator');
+
+  const lines = [];
+  lines.push(`import { ${imports.join(', ')} } from '@playwright/test';`);
+  lines.push('');
+  lines.push('/**');
+  lines.push(` * Page Object Model for the "${key}" module (E.ON KFWT).`);
+  lines.push(' *');
+  lines.push(` * AUTO-GENERATED by \`npm run sync-specs ${key}\` (scripts/sync-specs.js) from the real`);
+  lines.push(` * Playwright codegen recording \`${recordingRel}\`. Every locator below was exercised`);
+  lines.push(' * end-to-end on the live application, so it reflects the actual DOM.');
+  lines.push(' *');
+  lines.push(' * This is a clean STARTER POM: locators are deduplicated and named; recorded actions');
+  lines.push(' * are exposed as thin methods. Feel free to compose these into higher-level semantic');
+  lines.push(' * flows. Re-run with `--force-pom` to regenerate (this overwrites custom edits).');
+  lines.push(' */');
+  lines.push(`export class ${pageClass} {`);
+  lines.push('  readonly page: Page;');
+  for (const l of pageLocators) {
+    lines.push(`  readonly ${l.member}: Locator;`);
+  }
+  lines.push('');
+  lines.push('  constructor(page: Page) {');
+  lines.push('    this.page = page;');
+  for (const l of pageLocators) {
+    lines.push(`    this.${l.member} = page${locatorExpr(l)};`);
+  }
+  lines.push('  }');
+
+  if (hasFrame && frameTitle) {
+    lines.push('');
+    lines.push('  /** FrameLocator for the portal task iframe that hosts this module. */');
+    lines.push('  get frame(): FrameLocator {');
+    lines.push(`    return this.page.frameLocator(${tsString(`iframe[title="${frameTitle}"]`)});`);
+    lines.push('  }');
+  }
+
+  for (const l of frameLocators) {
+    lines.push('');
+    lines.push(`  get ${l.member}(): Locator {`);
+    lines.push(`    return this.frame${locatorExpr(l)};`);
+    lines.push('  }');
+  }
+
+  let methodCount = 0;
+  for (const l of locators) {
+    const actions = Array.from(l.actions).sort();
+    for (const action of actions) {
+      const meta = POM_ACTION_META[action];
+      if (!meta) continue;
+      methodCount += 1;
+      const methodName = `${action}${pascal(l.member)}`;
+      const param = meta.param ? `${meta.param.name}: ${meta.param.type}` : '';
+      const callArg = meta.param ? meta.param.name : '';
+      lines.push('');
+      lines.push(`  async ${methodName}(${param}): Promise<void> {`);
+      lines.push(`    await this.${l.member}.${action}(${callArg});`);
+      lines.push('  }');
+    }
+  }
+
+  lines.push('}');
+  lines.push('');
+  return { code: lines.join('\n'), methodCount };
+}
+
+/**
+ * Sinh (đóng gói) file Page Object Model chuẩn từ recording của KEY.
+ * options.force = true -> ghi đè file POM đã tồn tại.
+ */
+function generatePom(key, { force = false } = {}) {
+  const pageClass = toPascalCasePageName(key);
+  const outRel = `tests/pages/${pageClass}.ts`;
+  const outFull = path.join(PAGES_DIR, `${pageClass}.ts`);
+  const recordingFull = path.join(RECORDINGS_DIR, `${key}.recording.ts`);
+  const recordingRel = `tests/recordings/${key}.recording.ts`;
+
+  if (!fs.existsSync(recordingFull)) return { status: 'missing', outRel, pageClass, recordingRel };
+  const source = fs.readFileSync(recordingFull, 'utf-8');
+  if (!hasRealInteractions(source)) return { status: 'empty', outRel, pageClass, recordingRel };
+
+  const model = extractPomModel(source);
+  if (!model.locators.length) return { status: 'no-locators', outRel, pageClass, recordingRel };
+
+  const existed = fs.existsSync(outFull);
+  if (existed && !force) {
+    return { status: 'exists', outRel, pageClass, recordingRel, locatorCount: model.locators.length };
+  }
+
+  const { code, methodCount } = renderPomClass(pageClass, key, recordingRel, model);
+  fs.mkdirSync(PAGES_DIR, { recursive: true });
+  fs.writeFileSync(outFull, code, 'utf-8');
+
+  return {
+    status: existed ? 'overwritten' : 'created',
+    outRel,
+    pageClass,
+    recordingRel,
+    locatorCount: model.locators.length,
+    methodCount
+  };
+}
+
 function loadLiveSpec() {
   if (!fs.existsSync(LIVE_SPEC_PATH)) {
     return {
@@ -347,13 +781,55 @@ function finalize(spec) {
  * API dùng lại được cho auto-test.js: sync 1 KEY một cách "im lặng" (không exit),
  * trả về kết quả để pipeline log gọn gàng.
  */
-function syncKey(key) {
+function syncKey(key, options = {}) {
   const normalized = parseTicketKey(key);
   if (!normalized) return { key, status: 'invalid-key' };
   const spec = loadLiveSpec();
   const result = syncRecording(spec, normalized);
   if (result.status === 'ok') finalize(spec);
-  return { ...result, specRel: LIVE_SPEC_REL };
+  const out = { ...result, specRel: LIVE_SPEC_REL };
+  // POM generation is opt-in for programmatic callers (auto-test.js) so we never
+  // clobber curated Page Objects during a regenerate; the CLI enables it by default.
+  if (options.generatePom) {
+    out.pom = generatePom(normalized, { force: options.forcePom === true });
+  }
+  return out;
+}
+
+/**
+ * Report kết quả đóng gói POM ra CLI (dùng cho banner của npm run sync-specs).
+ */
+function reportPom(key, pom) {
+  switch (pom.status) {
+    case 'created':
+      console.log(
+        `📦 ${key}: đóng gói POM chuẩn → ${pom.outRel} (class ${pom.pageClass}: ` +
+          `${pom.locatorCount} locator, ${pom.methodCount} method).`
+      );
+      break;
+    case 'overwritten':
+      console.log(
+        `📦 ${key}: ghi đè POM (--force-pom) → ${pom.outRel} (class ${pom.pageClass}: ` +
+          `${pom.locatorCount} locator, ${pom.methodCount} method).`
+      );
+      break;
+    case 'exists':
+      console.log(
+        `↩️  ${key}: POM đã tồn tại ${pom.outRel} → giữ nguyên (dùng --force-pom để ghi đè).`
+      );
+      break;
+    case 'missing':
+      console.warn(`⚠️  ${key}: không thấy ${pom.recordingRel} → bỏ qua đóng gói POM.`);
+      break;
+    case 'empty':
+      console.warn(`⚠️  ${key}: recording không có thao tác thật → bỏ qua đóng gói POM.`);
+      break;
+    case 'no-locators':
+      console.warn(`⚠️  ${key}: không bóc tách được locator sạch nào → bỏ qua đóng gói POM.`);
+      break;
+    default:
+      console.warn(`⚠️  ${key}: POM status = ${pom.status}`);
+  }
 }
 
 function listRecordingKeys() {
@@ -368,10 +844,12 @@ function listRecordingKeys() {
 function main() {
   const argv = process.argv.slice(2);
   const all = argv.includes('--all');
+  const noPom = argv.includes('--no-pom');
+  const forcePom = argv.includes('--force-pom');
   const positional = argv.find((a) => !a.startsWith('--'));
 
   console.log('======================================================');
-  console.log(' 🔁 Reverse-Grounding: Recording -> OpenSpecs sync');
+  console.log(' 🔁 Reverse-Grounding + POM packaging');
   console.log('======================================================');
 
   let keys = [];
@@ -384,8 +862,9 @@ function main() {
   } else {
     const key = parseTicketKey(positional);
     if (!key) {
-      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY>   (hoặc)   npm run sync-specs -- --all\x1b[0m');
-      console.log('   Example: npm run sync-specs KFWT-1161\n');
+      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [--no-pom] [--force-pom]\x1b[0m');
+      console.log('          npm run sync-specs -- --all [--no-pom] [--force-pom]');
+      console.log('   Example: npm run sync-specs ADMINISTRATION\n');
       process.exit(1);
     }
     keys = [key];
@@ -393,11 +872,13 @@ function main() {
 
   const spec = loadLiveSpec();
   let changed = 0;
+  let totalComponents = 0;
   for (const key of keys) {
     const result = syncRecording(spec, key);
     switch (result.status) {
       case 'ok':
         changed++;
+        totalComponents += result.componentCount || 0;
         console.log(`✅ ${key}: bóc tách ${result.componentCount} component sống từ ${result.recordingRel}`);
         break;
       case 'missing':
@@ -418,16 +899,48 @@ function main() {
     finalize(spec);
     console.log('');
     console.log('------------------------------------------------------');
-    console.log(`📄 Đã cập nhật: ${LIVE_SPEC_REL}`);
-    console.log(`   Tổng: ${spec.recordingCount} recording, ${spec.componentCount} live component.`);
+    console.log(`📄 Reverse-Grounding: đã cập nhật ${LIVE_SPEC_REL}`);
+    console.log(`   Sync lần này: ${changed} recording, ${totalComponents} live component reverse-grounded.`);
+    console.log(`   Tổng cộng: ${spec.recordingCount} recording, ${spec.componentCount} live component.`);
     console.log('   → index.yaml + new-test.prompt.md tự tham chiếu file này khi sinh test ticket mới.');
-    console.log('------------------------------------------------------\n');
+    console.log('------------------------------------------------------');
   } else {
-    console.log('\nℹ️  Không có thay đổi nào được ghi.\n');
+    console.log('\nℹ️  Không có thay đổi reverse-grounding nào được ghi.');
   }
+
+  // ─── Bước 2 (MỚI): tự động đóng gói Page Object Model chuẩn ───
+  if (noPom) {
+    console.log('\nℹ️  --no-pom: bỏ qua bước đóng gói Page Object Model.\n');
+    return;
+  }
+
+  console.log('');
+  console.log('------------------------------------------------------');
+  console.log(' 📦 POM packaging: Recording -> tests/pages/<Key>Page.ts');
+  console.log('------------------------------------------------------');
+  let pomGenerated = 0;
+  for (const key of keys) {
+    const pom = generatePom(key, { force: forcePom });
+    if (pom.status === 'created' || pom.status === 'overwritten') pomGenerated++;
+    reportPom(key, pom);
+  }
+  console.log('------------------------------------------------------');
+  console.log(
+    `📦 POM packaging xong: ${pomGenerated}/${keys.length} file được ${forcePom ? 'ghi/ghi đè' : 'sinh mới'}.`
+  );
+  console.log('------------------------------------------------------\n');
 }
 
-module.exports = { syncKey, extractComponents, hasRealInteractions, extractPrimefacesId, LIVE_SPEC_REL };
+module.exports = {
+  syncKey,
+  extractComponents,
+  hasRealInteractions,
+  extractPrimefacesId,
+  toPascalCasePageName,
+  generatePom,
+  extractPomModel,
+  LIVE_SPEC_REL
+};
 
 if (require.main === module) {
   main();

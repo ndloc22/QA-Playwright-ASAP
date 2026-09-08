@@ -76,7 +76,17 @@ function safeSpawnSync(command, args, options = {}) {
 }
 
 const argv = process.argv.slice(2);
-const target = argv.find((arg) => !arg.startsWith('--') && /[A-Z0-9]+-\d+/i.test(arg));
+const urlFlagIndex = argv.indexOf('--url');
+const viewportFlagIndex = argv.indexOf('--viewport');
+// First positional argument that looks like a ticket key and is not the value
+// of `--url` or `--viewport`.
+const target = argv.find(
+  (arg, idx) =>
+    !arg.startsWith('--') &&
+    /[A-Z0-9]+-\d+/i.test(arg) &&
+    (urlFlagIndex === -1 || idx !== urlFlagIndex + 1) &&
+    (viewportFlagIndex === -1 || idx !== viewportFlagIndex + 1),
+);
 const key = parseTicketKey(target);
 
 if (!key) {
@@ -89,11 +99,24 @@ if (!key) {
 // Optional `--url <path>` lets the Tester start codegen deeper inside the app
 // (e.g. directly on the screen under test) instead of BASE_URL's root page.
 let startUrl = process.env.BASE_URL || 'http://127.0.0.1:3001';
-const urlFlagIndex = argv.indexOf('--url');
+
 if (urlFlagIndex !== -1 && argv[urlFlagIndex + 1]) {
   const extraPath = argv[urlFlagIndex + 1];
   startUrl = startUrl.replace(/\/+$/, '') + (extraPath.startsWith('/') ? extraPath : `/${extraPath}`);
 }
+
+// Default codegen to a spacious Full HD viewport so the Portal (PrimeFaces
+// tables, dialogs, iframes) renders at a comfortable size instead of the
+// cramped 1280x720 emulated default. Override precedence:
+//   1. `--viewport <w,h>` CLI flag   (npm run record:ticket <KEY> -- --viewport 1920,1080)
+//   2. CODEGEN_VIEWPORT env var
+//   3. Built-in default of 1920, 1080
+let viewportSize = process.env.CODEGEN_VIEWPORT || '1920, 1080';
+if (viewportFlagIndex !== -1 && argv[viewportFlagIndex + 1]) {
+  viewportSize = argv[viewportFlagIndex + 1];
+}
+// Playwright expects `--viewport-size=<width,height>` with no spaces.
+viewportSize = viewportSize.replace(/\s+/g, '');
 
 if (!fs.existsSync(RECORDINGS_DIR)) {
   fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
@@ -114,6 +137,7 @@ console.log(`======================================================\n`);
 console.log(`🌐 BASE_URL:        ${startUrl}`);
 console.log(`🔐 Auth session:    ${hasAuthStorage ? '.auth/user.json (preloaded)' : '(none -- will start logged out)'}`);
 console.log(`📄 Output file:     ${relRecordingPath}`);
+console.log(`🖥️  Viewport:        ${viewportSize.replace(',', ' x ')}`);
 console.log(`\n👉 A browser window will open. Perform the real flow described in the ticket, then close the`);
 console.log(`   Playwright Inspector window to finish -- the recorded script is saved automatically.\n`);
 
@@ -122,6 +146,7 @@ const codegenArgs = [
   'playwright',
   'codegen',
   '--target=playwright-test',
+  `--viewport-size=${viewportSize}`,
   `--output=${relRecordingPath}`,
 ];
 if (hasAuthStorage) {

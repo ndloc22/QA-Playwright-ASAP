@@ -286,24 +286,38 @@ function detectBlocker(key, copilotOutput) {
  * `--flag`-shaped token as a flag regardless of position.
  */
 const rawArgs = process.argv.slice(2);
-const target = rawArgs.find((arg) => !arg.startsWith('--') && /[A-Z0-9]+-\d+/i.test(arg));
+function parseTargetKey(rawTarget) {
+  if (!rawTarget) return null;
+  let value = String(rawTarget).trim().split(/[?#]/)[0].replace(/\/+$/, '');
+  if (!value) return null;
+  const segment = value.split('/').pop();
+  const jira = segment.match(/([A-Z][A-Z0-9]*-\d+)/i);
+  if (jira) return jira[1].toUpperCase();
+  const custom = segment.match(/([A-Za-z0-9_-]+)/);
+  return custom ? custom[1].toUpperCase() : null;
+}
+
+const modelValueIdx = rawArgs.findIndex((arg) => arg === '--model') + 1;
+const target = rawArgs.find(
+  (arg, idx) => !arg.startsWith('--') && idx !== modelValueIdx && parseTargetKey(arg) !== null
+);
 if (!target) {
   console.log('\n\x1b[33m⚡ Usage: npm run auto-test <TICKET_KEY_OR_URL> [-- --sonnet | --model <name> | --ground | --regenerate]\x1b[0m');
-  console.log('   Example: npm run auto-test KFWT-1161');
-  console.log('            npm run auto-test https://jira.eon.com/browse/KFWT-1161');
-  console.log('            npm run auto-test KFWT-1161 -- --sonnet               (Step 3 on claude-sonnet-5)');
-  console.log('            npm run auto-test KFWT-1161 -- --model claude-sonnet-5');
-  console.log('            npm run auto-test KFWT-1161 -- --ground              (require tests/recordings/<KEY>.recording.ts as Grounding Truth)');
-  console.log('            npm run auto-test KFWT-1161 -- --create-subtask       (also create a Jira "Test in DEV <KEY>" sub-task, 0 token)');
-  console.log('            npm run regenerate KFWT-1161                         (re-run Step 3+4 only, auto-references the recording if present)\n');
+  console.log('   Example: npm run auto-test ASAP-101');
+  console.log('            npm run auto-test https://your-jira/browse/ASAP-101');
+  console.log('            npm run auto-test ASAP-101 -- --sonnet               (Step 3 on claude-sonnet-5)');
+  console.log('            npm run auto-test ASAP-101 -- --model claude-sonnet-5');
+  console.log('            npm run auto-test ASAP-101 -- --ground              (require tests/recordings/<KEY>.recording.ts as Grounding Truth)');
+  console.log('            npm run auto-test ASAP-101 -- --create-subtask       (also create a Jira "Test in DEV <KEY>" sub-task, 0 token)');
+  console.log('            npm run auto-test ASAP-NAVIGATION -- --regenerate   (custom module key, no Jira ticket number)');
+  console.log('            npm run regenerate ASAP-101                         (re-run Step 3+4 only, auto-references the recording if present)\n');
   process.exit(1);
 }
 
-const match = target.match(/([A-Z0-9]+-\d+)/i);
-if (!match) {
-  fail(`Could not parse a Jira ticket key (e.g. KFWT-1161) from "${target}".`);
+const key = parseTargetKey(target);
+if (!key) {
+  fail(`Could not parse a ticket/module key (e.g. ASAP-101 or ASAP-NAVIGATION) from "${target}".`);
 }
-const key = match[1].toUpperCase();
 
 /**
  * `--ground`: makes the presence of tests/recordings/<KEY>.recording.ts
@@ -749,13 +763,95 @@ genuine bug) docs/tickets/${key}.md. Do not touch any other file.`;
 // record a real codegen session for the flow(s) that need better grounding
 // (`npm run record:ticket <KEY>`), then re-run just Step 3+4 so the newly
 // recorded selectors are picked up automatically -- no manual copy/paste.
+function summarizeRecordingFlow(source) {
+  const seen = new Set();
+  const bullets = [];
+  const add = (line) => {
+    if (line && !seen.has(line)) {
+      seen.add(line);
+      bullets.push(line);
+    }
+  };
+  const roleRe = /getByRole\(\s*(['"`])([^'"`]+)\1\s*,\s*\{[^}]*name\s*:\s*(['"`])([^'"`]+)\3/g;
+  let m;
+  while ((m = roleRe.exec(source)) !== null) {
+    add(`Interact with ${m[2]} "${m[4].trim()}"`);
+  }
+  const labelRe = /getBy(Label|Placeholder)\(\s*(['"`])([^'"`]+)\2/g;
+  while ((m = labelRe.exec(source)) !== null) {
+    add(`Fill field "${m[3].trim()}"`);
+  }
+  return bullets.slice(0, 40);
+}
+
+function synthesizeStubTicketFromRecording(ticketMdPath) {
+  const rec = readRecording();
+  if (rec.status !== 'ok') {
+    fail(
+      `--regenerate was specified but docs/tickets/${key}.md does not exist yet, and no usable ` +
+      `recording was found to synthesize it from.\n` +
+      (rec.status === 'empty'
+        ? `   -> ${RECORDING_REL_PATH} exists but has no recorded interactions. Re-record a real flow: npm run record:ticket ${key}\n`
+        : `   -> Record the real flow first: npm run record:ticket ${key}\n`) +
+      `   -> Or run the full pipeline once for a Jira ticket: npm run auto-test ${key}`
+    );
+  }
+
+  const raw = fs.readFileSync(RECORDING_FULL_PATH, 'utf-8');
+  const entryUrl = (raw.match(/\.goto\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1/) || [])[2] || 'N/A';
+  const flow = summarizeRecordingFlow(raw);
+  const title = key
+    .split(/[-_]/)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+
+  const stub = `# [${key}] ${title}
+
+| Thuộc tính | Giá trị |
+| :--- | :--- |
+| **Key** | \`${key}\` |
+| **Loại (Issue Type)** | Custom Module (no Jira ticket) |
+| **Nguồn (Source)** | Synthesized from Playwright recording |
+| **Recording** | \`${RECORDING_REL_PATH}\` |
+| **Entry URL** | ${entryUrl} |
+| **Synced At** | \`${new Date().toISOString()}\` |
+
+---
+
+## 📝 Description
+
+> ⚠️ This ticket was auto-synthesized by \`scripts/auto-test.js --regenerate\` because
+> \`${key}\` is a **custom module key with no Jira ticket**. The story context below is
+> reverse-engineered from the recorded Playwright flow in \`${RECORDING_REL_PATH}\` and is
+> the Grounding Truth for regeneration (Step 3 + Step 4).
+
+As a Tester I want the \`${title}\` module flow captured in the recording to be turned into a
+clean Page Object + Playwright spec so that the recorded selectors and steps are grounded and
+re-usable.
+
+## 🎬 Recorded Flow (reverse-engineered)
+
+${flow.length ? flow.map((b) => `- ${b}`).join('\n') : '- (No named interactions detected in the recording.)'}
+
+## ✅ Acceptance Criteria
+
+- The recorded end-to-end flow executes without errors against the live application.
+- Each distinct screen/section exercised in the recording is covered by an assertion.
+- Selectors are grounded in the recording (reverse-grounded into \`live_grounded_components.yaml\`).
+`;
+
+  fs.mkdirSync(path.dirname(ticketMdPath), { recursive: true });
+  fs.writeFileSync(ticketMdPath, stub, 'utf-8');
+  console.log(
+    `\x1b[32m🧩 No Jira ticket for custom module "${key}" -- synthesized stub docs/tickets/${key}.md from ${RECORDING_REL_PATH}.\x1b[0m`
+  );
+  return ticketMdPath;
+}
+
 if (REGENERATE_ONLY) {
   const ticketMdPath = path.join(ROOT_DIR, 'docs', 'tickets', `${key}.md`);
   if (!fs.existsSync(ticketMdPath)) {
-    fail(
-      `--regenerate was specified but docs/tickets/${key}.md does not exist yet.\n` +
-      `   -> Run the full pipeline at least once first: npm run auto-test ${key}`
-    );
+    synthesizeStubTicketFromRecording(ticketMdPath);
   }
   console.log(`\x1b[1m⏭️  --regenerate: skipping Step 1 (fetch-jira) and Step 2 (summarize-story), reusing existing docs/tickets/${key}.md\x1b[0m`);
 }

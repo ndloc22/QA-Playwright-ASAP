@@ -49,7 +49,7 @@ npm run regenerate ASAP-101
 | `npm run record:ticket <KEY>` | Mở web thật + codegen, ghi lại flow → `tests/recordings/<KEY>.recording.ts` |
 | `npm run sync-specs <KEY>` | *(Tiện ích phụ)* Merge thủ công selector từ recording vào OpenSpecs (đã tự động chạy ngầm ở bước regenerate) |
 | `npm run fetch-ticket <KEY>` | Bóc tách ticket (text + ảnh + diagram) vào `docs/tickets/` |
-| `npm run create-subtask <KEY>` | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) bằng Playwright thuần qua REST API — thay cho prompt AI `/create-test-sub-task` |
+| `npm run create-subtask <KEY> [KEY2 ...]` | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) bằng Playwright thuần qua REST API — hỗ trợ **multi-ticket** (chạy song song, 1 lần đăng nhập SSO) — thay cho prompt AI `/create-test-sub-task` |
 | `npm test` | Chạy toàn bộ test (headless) |
 | `npm run test:headed` | Chạy test có hiển thị trình duyệt |
 | `npm run test:ui` | Mở Playwright UI Mode (tua thời gian, debug trực quan) |
@@ -149,8 +149,20 @@ npm run create-subtask -- ASAP-5568
 # Chạy ẩn (khi session SSO đã hợp lệ, hợp cho CI)
 npm run create-subtask -- ASAP-5568 --headless
 
-# Ghi đè Summary mặc định
+# Ghi đè Summary mặc định (chỉ áp dụng khi có ĐÚNG 1 ticket)
 npm run create-subtask -- ASAP-5568 --summary "Test in DEV ASAP-5569"
+
+# 🆕 Multi-ticket — cách nhau bằng dấu cách (đăng nhập SSO 1 lần, chạy song song)
+npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103
+
+# 🆕 Multi-ticket — chuỗi phân cách bằng dấu phẩy
+npm run create-subtask -- "ASAP-101, ASAP-102, ASAP-103"
+
+# 🆕 Multi-ticket — đọc danh sách từ file (mỗi dòng/phẩy/khoảng trắng; '#' là comment)
+npm run create-subtask -- --file tickets.txt
+
+# 🆕 Chỉnh số luồng chạy song song trong pool (mặc định 3)
+npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103 --concurrency 5
 
 # Gộp vào pipeline auto-test (tạo sub-task ngay sau khi fetch ticket)
 npm run auto-test ASAP-5568 -- --create-subtask
@@ -160,18 +172,25 @@ npm run auto-test ASAP-5568 -- --create-subtask
 
 | Cờ / Biến môi trường | Ý nghĩa |
 | --- | --- |
+| `<KEY> [KEY2 ...]` | Một hoặc nhiều mã ticket (cách nhau bằng dấu cách hoặc dấu phẩy) — tự lọc trùng, chuẩn hoá chữ hoa, giữ thứ tự |
 | *(mặc định)* | Headed — mở cửa sổ Chrome để đăng nhập SSO/2FA lần đầu |
 | `--headless` | Chạy ẩn khi session SSO đã hợp lệ (hợp cho CI) |
 | `--headed` | Buộc mở cửa sổ (ghi đè `CREATE_SUBTASK_HEADLESS`) |
-| `--summary "<text>"` | Ghi đè Summary mặc định (`Test in DEV <KEY>`) |
+| `--summary "<text>"` | Ghi đè Summary mặc định (`Test in DEV <KEY>`) — **chỉ khi có đúng 1 ticket** |
+| `--file <path>` | Đọc danh sách ticket từ file (mỗi dòng/phẩy/khoảng trắng; dòng bắt đầu `#` là comment) |
+| `--concurrency <N>` | Số ticket xử lý song song trong pool (mặc định `3`) |
 | `CREATE_SUBTASK_HEADLESS=1` | Tương đương `--headless` |
+| `CREATE_SUBTASK_CONCURRENCY` | Số luồng mặc định (bị `--concurrency` ghi đè) |
 | `JIRA_BASE_URL` | Ghi đè domain Jira (mặc định `https://jira.eon.com`) |
 
 Đặc điểm an toàn:
+- **Multi-ticket (Bounded Concurrency Pool)**: khởi động trình duyệt + xác thực SSO **1 lần duy nhất**, sau đó tạo sub-task song song theo pool (mặc định 3 luồng). **Tương thích ngược 100%** khi chỉ truyền 1 ticket.
+- **Xử lý lỗi độc lập**: lỗi ở 1 ticket **không** ảnh hưởng các ticket khác; cuối cùng in **bảng tổng kết** (Ticket cha / Trạng thái: Đã tạo mới · Đã tồn tại · Lỗi / Subtask Key / Link Jira) kèm dòng thống kê số lượng.
 - **Idempotent**: nếu sub-task trùng Summary đã tồn tại thì bỏ qua, không tạo trùng.
 - **Headed mặc định** để đăng nhập SSO/2FA lần đầu; **`--headless`** khi phiên đã hợp lệ.
 - Assignee = current user (tương đương "Assign to me"); các field khác giữ mặc định (kế thừa story cha).
 - Xử lý lỗi graceful (chưa đăng nhập, sai key, mạng lỗi) và **không chặn** luồng sinh/kiểm thử test hiện có khi chạy qua `--create-subtask`.
+- Exit code: `0` nếu **mọi** ticket thành công hoặc đã tồn tại; `1` nếu có tối thiểu 1 lỗi.
 - Ghi đè domain qua biến môi trường `JIRA_BASE_URL` (mặc định `https://jira.eon.com`).
 
 

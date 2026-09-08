@@ -12,21 +12,37 @@
  *   - Assignee: current user ("Assign to me")
  *   - Các trường khác: giữ mặc định của Jira (kế thừa từ story cha).
  *
- * Usage:
+ * Usage (đơn lẻ — TƯƠNG THÍCH NGƯỢC 100%):
  *   node scripts/create-subtask.js ASAP-5568
  *   npm run create-subtask -- ASAP-5568
  *   npm run create-subtask -- ASAP-5568 --headless
  *   npm run create-subtask -- ASAP-5568 --summary "Test in DEV ASAP-5569"
  *
+ * Usage (Multi-ticket — Bounded Concurrency Pool):
+ *   # Danh sách cách nhau bằng dấu cách
+ *   npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103
+ *   # Chuỗi phân cách bằng dấu phẩy
+ *   npm run create-subtask -- "ASAP-101, ASAP-102, ASAP-103"
+ *   # Đọc từ file (mỗi dòng/phẩy/khoảng trắng đều được)
+ *   npm run create-subtask -- --file tickets.txt
+ *   # Chỉnh số luồng chạy song song (mặc định 3)
+ *   npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103 --concurrency 5
+ *
  * Flags / env:
  *   --headless                 : chạy ẩn (dùng khi session SSO đã hợp lệ, cho CI).
  *   --headed                   : buộc mở cửa sổ (mặc định — cần cho lần đăng nhập đầu).
- *   --summary "<text>"         : ghi đè Summary mặc định.
+ *   --summary "<text>"         : ghi đè Summary mặc định (CHỈ áp dụng khi có đúng 1 ticket).
+ *   --file <path>              : đọc danh sách ticket từ file.
+ *   --concurrency <N>          : số ticket xử lý song song trong pool (mặc định 3).
  *   CREATE_SUBTASK_HEADLESS=1  : tương đương --headless.
+ *   CREATE_SUBTASK_CONCURRENCY : số luồng mặc định (bị --concurrency ghi đè).
  *   JIRA_BASE_URL              : ghi đè domain Jira (mặc định https://jira.eon.com).
  *
- * Exit codes: 0 = tạo thành công HOẶC subtask đã tồn tại (idempotent);
- *             1 = lỗi (thiếu tham số / chưa đăng nhập / mạng / Jira từ chối).
+ * Cơ chế Bounded Concurrency: khởi động trình duyệt + xác thực SSO 1 LẦN duy nhất,
+ * sau đó chạy song song theo pool. Lỗi ở 1 ticket KHÔNG ảnh hưởng ticket khác.
+ *
+ * Exit codes: 0 = MỌI ticket đều thành công HOẶC đã tồn tại (idempotent);
+ *             1 = có tối thiểu 1 lỗi (thiếu tham số / chưa đăng nhập / mạng / Jira từ chối).
  */
 
 const { chromium } = require('@playwright/test');
@@ -51,13 +67,45 @@ function parseKey(arg) {
 }
 
 /**
- * Parse argv: tách parent key, cờ headless/headed và --summary "<text>".
- * key/URL và các cờ có thể xuất hiện ở bất kỳ vị trí nào (giống auto-test.js).
+ * Tách 1 token bất kỳ ("ASAP-101", "ASAP-101,ASAP-102", "ASAP-101 ASAP-102")
+ * thành danh sách mã ticket chuẩn hoá (chữ hoa). Bỏ qua phần rác không khớp.
+ */
+function extractKeys(token) {
+  if (token == null) return [];
+  return String(token)
+    .split(/[\s,;]+/)
+    .map((t) => parseKey(t))
+    .filter(Boolean);
+}
+
+/**
+ * Lọc trùng (deduplicate) nhưng GIỮ THỨ TỰ xuất hiện đầu tiên.
+ */
+function dedupe(keys) {
+  const seen = new Set();
+  const out = [];
+  for (const k of keys) {
+    if (!seen.has(k)) { seen.add(k); out.push(k); }
+  }
+  return out;
+}
+
+/**
+ * Parse argv: tách danh sách parent key (multi-ticket), cờ headless/headed,
+ * --summary, --file <path> và --concurrency N. Key/URL và các cờ có thể xuất
+ * hiện ở bất kỳ vị trí nào (giống auto-test.js). Không throw — mọi lỗi đọc file
+ * được trả về qua trường `fileError` để phía main xử lý graceful.
  */
 function parseArgs(argv) {
   let summary = null;
   let headless = /^(1|true|yes)$/i.test(process.env.CREATE_SUBTASK_HEADLESS || '');
-  let target = null;
+  let filePath = null;
+  let fileError = null;
+
+  const envConc = parseInt(process.env.CREATE_SUBTASK_CONCURRENCY || '', 10);
+  let concurrency = Number.isFinite(envConc) && envConc > 0 ? envConc : 3;
+
+  const rawTokens = [];
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -65,9 +113,38 @@ function parseArgs(argv) {
     if (a === '--headed') { headless = false; continue; }
     if (a === '--summary') { summary = argv[i + 1] || null; i++; continue; }
     if (a.startsWith('--summary=')) { summary = a.slice('--summary='.length); continue; }
-    if (!a.startsWith('--') && !target && /[A-Z0-9]+-\d+/i.test(a)) { target = a; }
+    if (a === '--file') { filePath = argv[i + 1] || null; i++; continue; }
+    if (a.startsWith('--file=')) { filePath = a.slice('--file='.length); continue; }
+    if (a === '--concurrency') {
+      const n = parseInt(argv[i + 1] || '', 10);
+      if (Number.isFinite(n) && n > 0) concurrency = n;
+      i++; continue;
+    }
+    if (a.startsWith('--concurrency=')) {
+      const n = parseInt(a.slice('--concurrency='.length), 10);
+      if (Number.isFinite(n) && n > 0) concurrency = n;
+      continue;
+    }
+    if (!a.startsWith('--')) { rawTokens.push(a); }
   }
-  return { parentKey: parseKey(target), summary, headless };
+
+  const keys = [];
+  for (const tok of rawTokens) keys.push(...extractKeys(tok));
+
+  if (filePath) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      // Bỏ dòng comment bắt đầu bằng '#'.
+      for (const line of content.split(/\r?\n/)) {
+        const stripped = line.replace(/#.*$/, '');
+        keys.push(...extractKeys(stripped));
+      }
+    } catch (e) {
+      fileError = `Không đọc được file "${filePath}": ${e.message}`;
+    }
+  }
+
+  return { parentKeys: dedupe(keys), summary, headless, concurrency, filePath, fileError };
 }
 
 /**
@@ -284,88 +361,213 @@ async function waitForAuth(page, headless) {
   return false;
 }
 
-async function main() {
-  const { parentKey, summary, headless } = parseArgs(process.argv.slice(2));
+/**
+ * Chuẩn hoá kết quả thô từ createSubtaskViaRest thành 1 dòng cho bảng tổng kết.
+ * status ∈ 'created' | 'existing' | 'error'.
+ */
+function toRow(parentKey, result) {
+  if (!result) return { parentKey, status: 'error', error: 'UNKNOWN' };
+  if (result.error) {
+    const map = {
+      NOT_AUTHENTICATED: 'Session không hợp lệ (401/403)',
+      PARENT_NOT_FOUND: 'Không tìm thấy Story cha (404)',
+      NO_SUBTASK_TYPE: 'Không có Issue Type "Sub-task"',
+      NO_PROJECT_ON_PARENT: 'Parent không có project'
+    };
+    return { parentKey, status: 'error', error: map[result.error] || result.error };
+  }
+  if (result.existing) {
+    return { parentKey, status: 'existing', key: result.key, link: `${JIRA_BASE_URL}/browse/${result.key}` };
+  }
+  if (result.created) {
+    return {
+      parentKey, status: 'created', key: result.key,
+      link: `${JIRA_BASE_URL}/browse/${result.key}`,
+      assignedSeparately: !!result.assignedSeparately
+    };
+  }
+  return { parentKey, status: 'error', error: 'UNKNOWN_RESULT' };
+}
 
-  if (!parentKey) {
-    console.error('❌ Thiếu mã Story cha hợp lệ.');
-    console.error('   Ví dụ: node scripts/create-subtask.js ASAP-5568');
-    console.error('          npm run create-subtask -- ASAP-5568 [--headless] [--summary "..."]');
+const STATUS_LABEL = { created: 'Đã tạo mới', existing: 'Đã tồn tại', error: 'Lỗi' };
+const STATUS_ICON = { created: '✅', existing: 'ℹ️ ', error: '❌' };
+
+function pad(str, len) {
+  const s = String(str == null ? '' : str);
+  return s + ' '.repeat(Math.max(0, len - s.length));
+}
+
+/**
+ * In bảng tổng kết đẹp mắt (khung kẻ) + dòng tổng hợp số lượng theo trạng thái.
+ */
+function printSummaryTable(rows) {
+  const headers = ['#', 'Ticket cha', 'Trạng thái', 'Subtask Key', 'Link Jira'];
+  const data = rows.map((r, i) => [
+    String(i + 1),
+    r.parentKey,
+    STATUS_LABEL[r.status] || r.status,
+    r.status === 'error' ? '—' : (r.key || '—'),
+    r.status === 'error' ? (r.error || '—') : (r.link || '—')
+  ]);
+
+  const widths = headers.map((h, c) =>
+    Math.max(h.length, ...data.map((row) => String(row[c]).length))
+  );
+
+  const line = (l, m, rr) => l + widths.map((w) => '─'.repeat(w + 2)).join(m) + rr;
+  const rowStr = (cells) => '│ ' + cells.map((c, i) => pad(c, widths[i])).join(' │ ') + ' │';
+
+  console.log('\n' + line('┌', '┬', '┐'));
+  console.log(rowStr(headers));
+  console.log(line('├', '┼', '┤'));
+  for (const row of data) console.log(rowStr(row));
+  console.log(line('└', '┴', '┘'));
+
+  const created = rows.filter((r) => r.status === 'created').length;
+  const existing = rows.filter((r) => r.status === 'existing').length;
+  const errored = rows.filter((r) => r.status === 'error').length;
+  console.log(
+    `\n📊 Tổng kết: ${rows.length} ticket — ` +
+    `\x1b[32m${created} tạo mới\x1b[0m, ` +
+    `\x1b[33m${existing} đã tồn tại\x1b[0m, ` +
+    `\x1b[31m${errored} lỗi\x1b[0m.\n`
+  );
+}
+
+/**
+ * Bounded Concurrency Pool: nhiều "worker" (mỗi worker 1 page dùng chung
+ * context/cookie SSO) cùng rút ticket từ 1 hàng đợi cho tới khi cạn. Nhờ đó
+ * trình duyệt + SSO chỉ khởi tạo 1 lần, còn việc tạo subtask chạy song song.
+ * Lỗi 1 ticket được nuốt tại chỗ (ghi vào results) nên không lan sang ticket khác.
+ */
+async function runPool(context, tickets, opts) {
+  const { concurrency, summaryOverride } = opts;
+  const results = new Array(tickets.length);
+  const total = tickets.length;
+  let nextIndex = 0;
+  let done = 0;
+
+  const workerCount = Math.max(1, Math.min(concurrency, total));
+
+  async function worker(page) {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= total) break;
+      const parentKey = tickets[i];
+      const summaryText = (summaryOverride && total === 1) ? summaryOverride : `Test in DEV ${parentKey}`;
+      let row;
+      try {
+        await page.goto(`${JIRA_BASE_URL}/browse/${parentKey}`, { waitUntil: 'commit', timeout: 60000 });
+        const result = await createSubtaskViaRest(page, parentKey, summaryText);
+        row = toRow(parentKey, result);
+      } catch (err) {
+        row = { parentKey, status: 'error', error: err.message };
+      }
+      results[i] = row;
+      done++;
+      const icon = STATUS_ICON[row.status] || '•';
+      const detail = row.status === 'error' ? row.error : (row.key || '');
+      console.log(`   [${done}/${total}] ${icon} ${parentKey} → ${detail} (${STATUS_LABEL[row.status]})`);
+    }
+  }
+
+  // Worker đầu tiên tái dùng page đã xác thực; các worker còn lại mở page mới
+  // (cùng context nên dùng chung session SSO đã đăng nhập).
+  const pages = [opts.authedPage];
+  for (let i = 1; i < workerCount; i++) pages.push(await context.newPage());
+
+  await Promise.all(pages.map((p) => worker(p)));
+
+  // Đóng các page phụ (giữ page đã xác thực để finally của main dọn dẹp).
+  for (let i = 1; i < pages.length; i++) await pages[i].close().catch(() => {});
+
+  return results;
+}
+
+async function main() {
+  const { parentKeys, summary, headless, concurrency, filePath, fileError } = parseArgs(process.argv.slice(2));
+
+  if (fileError) {
+    console.error(`❌ ${fileError}`);
     process.exit(1);
   }
 
-  const summaryText = summary || `Test in DEV ${parentKey}`;
-  const parentUrl = `${JIRA_BASE_URL}/browse/${parentKey}`;
+  if (!parentKeys.length) {
+    console.error('❌ Thiếu mã Story cha hợp lệ.');
+    console.error('   Đơn lẻ  : node scripts/create-subtask.js ASAP-5568');
+    console.error('   Nhiều   : npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103');
+    console.error('   Dấu phẩy: npm run create-subtask -- "ASAP-101, ASAP-102"');
+    console.error('   Từ file : npm run create-subtask -- --file tickets.txt');
+    process.exit(1);
+  }
+
+  const isMulti = parentKeys.length > 1;
+  const effConcurrency = Math.max(1, Math.min(concurrency, parentKeys.length));
+
+  if (summary && isMulti) {
+    console.warn('⚠️  --summary chỉ áp dụng cho ticket đơn lẻ — bỏ qua khi có nhiều ticket.');
+  }
 
   console.log('\n======================================================');
-  console.log(`⚡ Tạo Test Sub-task cho Story: \x1b[36m${parentKey}\x1b[0m`);
-  console.log(`📝 Summary : \x1b[1m${summaryText}\x1b[0m`);
+  if (isMulti) {
+    console.log(`⚡ Tạo Test Sub-task cho \x1b[36m${parentKeys.length}\x1b[0m Story (Bounded Concurrency Pool)`);
+    console.log(`🎫 Tickets   : \x1b[1m${parentKeys.join(', ')}\x1b[0m`);
+    console.log(`🧵 Concurrency: ${effConcurrency}`);
+  } else {
+    const summaryText = summary || `Test in DEV ${parentKeys[0]}`;
+    console.log(`⚡ Tạo Test Sub-task cho Story: \x1b[36m${parentKeys[0]}\x1b[0m`);
+    console.log(`📝 Summary : \x1b[1m${summaryText}\x1b[0m`);
+  }
   console.log(`👤 Assignee: current user (Assign to me)`);
-  console.log(`🔗 Parent  : \x1b[34m${parentUrl}\x1b[0m`);
   console.log('======================================================\n');
 
   const { context, isCdp } = await connectContext(headless);
-  const page = await context.newPage();
+  const authedPage = await context.newPage();
   let exitCode = 0;
 
   try {
-    console.log(`🔄 Đang mở Story cha để thiết lập session...`);
-    await page.goto(parentUrl, { waitUntil: 'commit', timeout: 60000 });
+    console.log(`🔄 Đang mở Jira để thiết lập & xác thực session (1 lần)...`);
+    const firstUrl = `${JIRA_BASE_URL}/browse/${parentKeys[0]}`;
+    await authedPage.goto(firstUrl, { waitUntil: 'commit', timeout: 60000 });
 
-    const authed = await waitForAuth(page, headless);
+    const authed = await waitForAuth(authedPage, headless);
     if (!authed) {
       throw new Error(
         headless
           ? 'Chưa đăng nhập Jira ở chế độ headless. Hãy chạy lại KHÔNG kèm --headless để đăng nhập SSO lần đầu:\n' +
-            `   npm run create-subtask -- ${parentKey}`
+            `   npm run create-subtask -- ${parentKeys.join(' ')}`
           : 'Hết thời gian chờ đăng nhập Jira (5 phút).'
       );
     }
-    console.log('🎉 Session Jira hợp lệ. Đang gọi REST API tạo sub-task (0 token)...\n');
+    console.log('🎉 Session Jira hợp lệ. Đang tạo sub-task (0 token)...\n');
 
-    const result = await createSubtaskViaRest(page, parentKey, summaryText);
+    const results = await runPool(context, parentKeys, {
+      concurrency: effConcurrency,
+      summaryOverride: summary,
+      authedPage
+    });
 
-    if (result.error) {
-      if (result.error === 'NOT_AUTHENTICATED') {
-        throw new Error('Session Jira không hợp lệ (401/403). Chạy lại headed để đăng nhập SSO.');
-      }
-      if (result.error === 'PARENT_NOT_FOUND') {
-        throw new Error(`Không tìm thấy Story cha ${parentKey} (404). Kiểm tra lại mã ticket.`);
-      }
-      if (result.error === 'NO_SUBTASK_TYPE') {
-        throw new Error('Không xác định được Issue Type "Sub-task" cho project này.');
-      }
-      throw new Error(result.error);
-    }
+    printSummaryTable(results);
 
-    if (result.existing) {
-      console.log(`\x1b[33mℹ️  Sub-task đã tồn tại (bỏ qua, idempotent):\x1b[0m ${result.key}`);
-      console.log(`   ${JIRA_BASE_URL}/browse/${result.key}`);
-    } else if (result.created) {
-      console.log(`\x1b[32m✅ ĐÃ TẠO SUB-TASK THÀNH CÔNG:\x1b[0m \x1b[1m${result.key}\x1b[0m`);
-      console.log(`   🔗 ${JIRA_BASE_URL}/browse/${result.key}`);
-      console.log(`   📝 ${result.summary}`);
-      if (result.assignedSeparately) {
-        console.log('   👤 Assignee được gán qua bước PUT riêng (field không có trên create screen).');
-      } else {
-        console.log('   👤 Assignee: current user.');
-      }
-    }
-    console.log('');
+    if (results.some((r) => r.status === 'error')) exitCode = 1;
   } catch (err) {
     console.error(`\n❌ Lỗi: ${err.message}\n`);
     exitCode = 1;
   } finally {
     if (!isCdp) {
-      await page.waitForTimeout(headless ? 0 : 1500);
-      await page.close().catch(() => {});
+      await authedPage.waitForTimeout(headless ? 0 : 1500);
+      await authedPage.close().catch(() => {});
       await context.close().catch(() => {});
     } else {
-      await page.close().catch(() => {});
+      await authedPage.close().catch(() => {});
     }
   }
 
   process.exit(exitCode);
 }
 
-main();
+module.exports = { parseKey, extractKeys, dedupe, parseArgs, toRow, printSummaryTable };
+
+if (require.main === module) {
+  main();
+}

@@ -1,0 +1,19 @@
+{
+  "$id": "elements/ElementNode.json",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "type"
+  ]
+}

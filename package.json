@@ -1,0 +1,37 @@
+{
+  "name": "qa-playwright-asap",
+  "version": "1.0.0",
+  "description": "Playwright Automation & 1-Click Workflow for ASAP QA Testers powered by GitHub Copilot",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "report": "playwright show-report",
+    "record": "playwright codegen",
+    "record:ticket": "node scripts/record-ticket.js",
+    "fetch-ticket": "node scripts/fetch-jira.js",
+    "generate-codebase-specs": "node scripts/generate-codebase-specs.js",
+    "sync-specs": "node scripts/sync-specs.js",
+    "auto-test": "node scripts/auto-test.js",
+    "regenerate": "node scripts/auto-test.js --regenerate"
+  },
+  "keywords": [
+    "playwright",
+    "testing",
+    "qa",
+    "automation",
+    "copilot"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.0.0",
+    "dotenv": "^16.4.7",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "js-yaml": "^5.4.1"
+  }
+}

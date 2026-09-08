@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1-Click: Run All Playwright Tests (F5)",
+      "type": "shell",
+      "command": "npx playwright test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "1-Click: Run Playwright Tests (Headed - Có Mở Trình Duyệt)",
+      "type": "shell",
+      "command": "npx playwright test --headed",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "1-Click: Open Playwright UI Mode (Giao Diện Trực Quan)",
+      "type": "shell",
+      "command": "npx playwright test --ui",
+      "group": "test"
+    },
+    {
+      "label": "1-Click: Record New Test (Codegen Ghi Thao Tác)",
+      "type": "shell",
+      "command": "npx playwright codegen",
+      "group": "test"
+    },
+    {
+      "label": "1-Click: Show Last HTML Report (Xem Báo Cáo)",
+      "type": "shell",
+      "command": "npx playwright show-report",
+      "group": "test"
+    }
+  ]
+}

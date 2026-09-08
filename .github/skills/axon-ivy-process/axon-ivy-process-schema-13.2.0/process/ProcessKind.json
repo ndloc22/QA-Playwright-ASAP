@@ -1,0 +1,8 @@
+{
+  "$id": "process/ProcessKind.json",
+  "type": "string",
+  "enum": [
+    "ROOT",
+    "SUB"
+  ]
+}

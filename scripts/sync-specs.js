@@ -45,7 +45,8 @@ const LIVE_SPEC_REL = 'docs/specs/codebase/live_grounded_components.yaml';
  */
 function parseTicketKey(arg) {
   if (!arg) return null;
-  const match = String(arg).match(/([A-Z0-9]+-\d+)/i);
+  const cleaned = String(arg).replace(/^https?:\/\/[^\/]+\/browse\//i, '').replace(/[\/\\]+$/, '').trim();
+  const match = cleaned.match(/([A-Za-z0-9_-]+)/);
   return match ? match[1].toUpperCase() : null;
 }
 

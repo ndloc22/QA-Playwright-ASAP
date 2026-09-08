@@ -36,7 +36,8 @@ const AUTH_STORAGE_STATE = path.join(ROOT_DIR, '.auth', 'user.json');
 
 function parseTicketKey(arg) {
   if (!arg) return null;
-  const match = arg.match(/([A-Z0-9]+-\d+)/i);
+  const cleaned = String(arg).replace(/^https?:\/\/[^\/]+\/browse\//i, '').replace(/[\/\\]+$/, '').trim();
+  const match = cleaned.match(/([A-Za-z0-9_-]+)/);
   return match ? match[1].toUpperCase() : null;
 }
 

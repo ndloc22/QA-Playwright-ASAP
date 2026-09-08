@@ -1,6 +1,6 @@
 # 🏛️ OpenSpecs YAML Architecture — Why Compressing a Codebase into YAML Is Faster, Lighter & Token-Efficient
 
-> **Enterprise architecture whitepaper — for engineering teams, leadership, and client stakeholders.**
+> **Enterprise architecture whitepaper — for engineering teams, technical architects, and client stakeholders.**
 > Explains how we statically extract application source code (XHTML / BPMN `.p.json`) into compact YAML specifications (`ui_components.yaml`, `state_machine.yaml`) so GitHub Copilot can *ground* against real UI/business logic with ~100% accuracy — instead of dumping raw source into the LLM.
 >
 > Applied on the **QA-Playwright-ASAP** project (Axon Ivy + PrimeFaces/JSF).

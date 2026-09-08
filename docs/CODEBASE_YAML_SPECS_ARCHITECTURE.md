@@ -1,6 +1,6 @@
 # 🏛️ Kiến Trúc OpenSpecs YAML — Vì Sao Nén Codebase Thành YAML Lại Nhanh, Nhẹ & Tiết Kiệm Token
 
-> **Tài liệu trình bày nội bộ (team engineer) & lãnh đạo.**
+> **Tài liệu kiến trúc kỹ thuật — Dành cho đội ngũ kỹ sư & đối tác dự án.**
 > Giải thích cơ chế bóc tách mã nguồn ứng dụng (XHTML / BPMN `.p.json`) thành bộ đặc tả YAML (`ui_components.yaml`, `state_machine.yaml`) để GitHub Copilot "grounding" chính xác 100% — thay vì nạp thô mã nguồn vào LLM.
 >
 > Áp dụng cho dự án **QA-Playwright-ASAP** (Axon Ivy + PrimeFaces/JSF).
@@ -9,7 +9,7 @@
 
 ## 📑 Mục Lục
 
-1. [TL;DR — Tóm tắt cho lãnh đạo](#1-tldr--tóm-tắt-cho-lãnh-đạo)
+1. [TL;DR — Tóm tắt tổng quan kiến trúc](#1-tldr--tóm-tắt-tổng-quan-kiến-trúc)
 2. [Vấn đề: nạp mã nguồn thô vào LLM đắt & thiếu chính xác](#2-vấn-đề-nạp-mã-nguồn-thô-vào-llm-đắt--thiếu-chính-xác)
 3. [Giải pháp: Zero-Token Preprocessing (bóc tách tĩnh trên CPU local)](#3-giải-pháp-zero-token-preprocessing-bóc-tách-tĩnh-trên-cpu-local)
 4. [Cấu trúc `ui_components.yaml`](#4-cấu-trúc-ui_componentsyaml)
@@ -21,7 +21,7 @@
 
 ---
 
-## 1. TL;DR — Tóm Tắt Cho Lãnh Đạo
+## 1. TL;DR — Tóm Tắt Tổng Quan Kiến Trúc
 
 | Chỉ số | Nạp mã nguồn thô (naive) | OpenSpecs YAML (kiến trúc này) | Cải thiện |
 | --- | --- | --- | --- |

@@ -241,7 +241,7 @@ Các cơ chế nâng cao được tách sang **[docs/ADVANCED-GUIDE.md](./docs/A
 
 | Tài liệu | Ngôn ngữ | Nội dung |
 | --- | :-: | --- |
-| [`docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md) | 🇻🇳 VI | Kiến trúc OpenSpecs YAML — vì sao nhanh, nhẹ & tiết kiệm token (trình bày cho team + lãnh đạo) |
+| [`docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md) | 🇻🇳 VI | Kiến trúc OpenSpecs YAML — vì sao nhanh, nhẹ & tiết kiệm token (tổng quan kiến trúc kỹ thuật) |
 | [`docs/ADVANCED-GUIDE.md`](./docs/ADVANCED-GUIDE.md) | 🇻🇳 VI | Hướng dẫn cơ chế nâng cao end-to-end |
 | [`docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md`](./docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md) | 🇻🇳 VI | Kế hoạch tối ưu token & quy trình 1-Click |
 | [`docs/ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md`](./docs/ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md) | 🇻🇳 VI | Phân tích gốc rễ: vì sao grounding là bắt buộc |

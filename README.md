@@ -120,6 +120,8 @@ Thay vì nạp toàn bộ tài liệu nghiệp vụ vào AI mỗi lần, starter
 - **Forward:** OpenSpecs → sinh test (grounding).
 - **Reverse-Grounding:** selector Tester vừa thao tác → merge ngược vào `docs/specs/codebase/live_grounded_components.yaml` → **ticket sau tái dùng ngay** selector đã kiểm chứng (ưu tiên cao hơn spec tĩnh).
 
+> 📐 Vì sao nén codebase thành YAML lại **nhanh, nhẹ & tiết kiệm 95–98% token**? Xem tài liệu kiến trúc chi tiết: **[docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md](./docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md)** (🇬🇧 English: [docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md](./docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md)).
+
 ### Tối ưu token — phân tầng model AI
 
 Việc "đọc/trích xuất" dùng model rẻ, việc "suy luận/thiết kế test" mới dùng model mạnh:
@@ -208,6 +210,7 @@ QA-Playwright-ASAP/
 │   ├── specs/              # OpenSpecs nghiệp vụ: index/process/roles/fields.yaml (template)
 │   │   └── codebase/       # Bóc tách từ mã nguồn: ui_components, state_machine, live_grounded_components
 │   ├── tickets/            # Ticket đã bóc tách (<KEY>.md + ảnh/diagram) — sinh khi chạy
+│   ├── en/                 # 🌐 Tài liệu tiếng Anh (README, ADVANCED-GUIDE, ARCHITECTURE)
 │   └── ADVANCED-GUIDE.md   # Tài liệu chi tiết các cơ chế nâng cao
 ├── scripts/                # auto-test, fetch-jira, record-ticket, sync-specs, generate-codebase-specs...
 ├── tests/
@@ -233,3 +236,18 @@ Các cơ chế nâng cao được tách sang **[docs/ADVANCED-GUIDE.md](./docs/A
 5. Bộ bóc tách OpenSpecs Codebase
 6. Quy trình xử lý Blocker & Open Questions (2 giai đoạn)
 7. Nhân bản Template sang dự án khác
+
+### 🗂️ Danh Mục Tài Liệu
+
+| Tài liệu | Ngôn ngữ | Nội dung |
+| --- | :-: | --- |
+| [`docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md) | 🇻🇳 VI | Kiến trúc OpenSpecs YAML — vì sao nhanh, nhẹ & tiết kiệm token (trình bày cho team + lãnh đạo) |
+| [`docs/ADVANCED-GUIDE.md`](./docs/ADVANCED-GUIDE.md) | 🇻🇳 VI | Hướng dẫn cơ chế nâng cao end-to-end |
+| [`docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md`](./docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md) | 🇻🇳 VI | Kế hoạch tối ưu token & quy trình 1-Click |
+| [`docs/ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md`](./docs/ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md) | 🇻🇳 VI | Phân tích gốc rễ: vì sao grounding là bắt buộc |
+| [`docs/en/README.md`](./docs/en/README.md) | 🇬🇧 EN | Bản tiếng Anh của README (show khách hàng) |
+| [`docs/en/ADVANCED-GUIDE.md`](./docs/en/ADVANCED-GUIDE.md) | 🇬🇧 EN | Advanced operational guide (English) |
+| [`docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md) | 🇬🇧 EN | Client-ready architecture whitepaper (English) |
+| [`docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md`](./docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md) | 🇬🇧 EN | Token-optimization plan (English) |
+
+> 🌐 **Cho khách hàng quốc tế:** toàn bộ tài liệu tiếng Anh nằm trong **[docs/en/](./docs/en/)**.

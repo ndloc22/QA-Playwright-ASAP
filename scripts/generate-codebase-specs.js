@@ -15,8 +15,9 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+require('dotenv').config();
 
-const DEFAULT_SOURCE = 'D:\\Projects\\kleinfernwirktechnik';
+const DEFAULT_SOURCE = process.env.CODEBASE_SOURCE_PATH || process.env.ASAP_SOURCE_PATH || 'D:\\Projects\\asap';
 const OUTPUT_DIR = path.join(__dirname, '..', 'docs', 'specs', 'codebase');
 
 const IGNORED_DIR_NAMES = new Set(['.git', 'node_modules', 'target', '.settings', '.metadata', 'dist', 'build']);
@@ -261,7 +262,12 @@ function main() {
   console.log('');
 
   if (!fs.existsSync(sourceRoot)) {
-    console.error(`❌ Không tìm thấy thư mục nguồn: ${sourceRoot}`);
+    console.error(`❌ Không tìm thấy thư mục nguồn: ${sourceRoot}\n\n` +
+      '💡 Hướng dẫn:\n' +
+      '   1. Chạy kèm cờ --source trỏ tới thư mục source Axon Ivy của ASAP trên máy bạn:\n' +
+      '      npm run generate-codebase-specs -- --source "C:\\path\\to\\asap\\source"\n\n' +
+      '   2. Hoặc cấu hình trong file .env:\n' +
+      '      CODEBASE_SOURCE_PATH="C:\\path\\to\\asap\\source"\n');
     process.exit(1);
   }
 

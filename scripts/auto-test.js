@@ -294,6 +294,7 @@ if (!target) {
   console.log('            npm run auto-test KFWT-1161 -- --sonnet               (Step 3 on claude-sonnet-5)');
   console.log('            npm run auto-test KFWT-1161 -- --model claude-sonnet-5');
   console.log('            npm run auto-test KFWT-1161 -- --ground              (require tests/recordings/<KEY>.recording.ts as Grounding Truth)');
+  console.log('            npm run auto-test KFWT-1161 -- --create-subtask       (also create a Jira "Test in DEV <KEY>" sub-task, 0 token)');
   console.log('            npm run regenerate KFWT-1161                         (re-run Step 3+4 only, auto-references the recording if present)\n');
   process.exit(1);
 }
@@ -323,6 +324,16 @@ const GROUND_REQUIRED = rawArgs.includes('--ground');
  * happened once, only the grounded generation needs to be redone.
  */
 const REGENERATE_ONLY = rawArgs.includes('--regenerate');
+
+/**
+ * `--create-subtask`: sau khi Step 1 (fetch-jira) xác nhận session Jira còn
+ * hợp lệ, tạo luôn một Jira Test Sub-task ("Test in DEV <KEY>", assign to me)
+ * cho story hiện tại BẰNG Playwright thuần qua REST API (0 token AI, xem
+ * scripts/create-subtask.js). Idempotent: nếu subtask đã tồn tại thì bỏ qua.
+ * Không chặn pipeline nếu bước này lỗi (chỉ cảnh báo), để luồng sinh test
+ * hiện có không bị gián đoạn.
+ */
+const CREATE_SUBTASK = rawArgs.includes('--create-subtask');
 
 const RECORDING_REL_PATH = `tests/recordings/${key}.recording.ts`;
 const RECORDING_FULL_PATH = path.join(ROOT_DIR, 'tests', 'recordings', `${key}.recording.ts`);
@@ -361,6 +372,27 @@ function fetchJira() {
     );
   }
   return ticketMdPath;
+}
+
+// ── OPTIONAL: CREATE JIRA TEST SUB-TASK (0 token, pure Playwright REST) ──
+// Chạy scripts/create-subtask.js trong tiến trình con. Không bao giờ làm
+// pipeline dừng lại: mọi lỗi chỉ cảnh báo, vì tạo subtask là việc phụ trợ,
+// không thuộc luồng sinh/kiểm thử test chính.
+function createSubtask() {
+  console.log(`\x1b[1m🧩 Creating Jira test sub-task (0 token) for ${key}...\x1b[0m`);
+  const script = path.join(__dirname, 'create-subtask.js');
+  const nodeBin = process.execPath;
+  const args = [script, target];
+  // Trong pipeline auto-test, session SSO đã được Step 1 xác thực => chạy headless.
+  if (!rawArgs.includes('--headed')) {
+    args.push('--headless');
+  }
+  const result = spawnSync(nodeBin, args, { stdio: 'inherit', shell: false, cwd: ROOT_DIR });
+  if (result.error) {
+    console.warn(`\x1b[33m⚠️  Sub-task creation could not be started: ${result.error.message} (bỏ qua, không chặn pipeline)\x1b[0m`);
+  } else if (result.status !== 0) {
+    console.warn(`\x1b[33m⚠️  Sub-task creation exited with code ${result.status} (bỏ qua, không chặn pipeline)\x1b[0m`);
+  }
 }
 
 // ── STEP 2: SUMMARIZE STORY CONTENT (cheap model tier, claude-sonnet-5) ───
@@ -754,6 +786,9 @@ if (GROUND_REQUIRED) {
 const summaryFullPath = path.join(ROOT_DIR, 'docs', 'tickets', `${key}.summary.json`);
 if (!REGENERATE_ONLY) {
   fetchJira();
+}
+if (CREATE_SUBTASK) {
+  createSubtask();
 }
 const summaryRelPath = REGENERATE_ONLY
   ? (fs.existsSync(summaryFullPath) ? `docs/tickets/${key}.summary.json` : null)

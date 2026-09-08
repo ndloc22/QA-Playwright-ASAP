@@ -44,11 +44,12 @@ npm run regenerate ASAP-101
 
 | Lệnh | Công dụng |
 | --- | --- |
-| `npm run auto-test <KEY>` | Pipeline 4 bước: fetch ticket → summarize → analyze + generate → verify |
+| `npm run auto-test <KEY>` | Pipeline 4 bước: fetch ticket → summarize → analyze + generate → verify (thêm `-- --create-subtask` để tạo luôn Jira Test Sub-task 0 token) |
 | `npm run regenerate <KEY>` | Regenerate spec từ recording (bỏ qua fetch/summarize), gỡ `test.fixme` |
 | `npm run record:ticket <KEY>` | Mở web thật + codegen, ghi lại flow → `tests/recordings/<KEY>.recording.ts` |
 | `npm run sync-specs <KEY>` | *(Tiện ích phụ)* Merge thủ công selector từ recording vào OpenSpecs (đã tự động chạy ngầm ở bước regenerate) |
 | `npm run fetch-ticket <KEY>` | Bóc tách ticket (text + ảnh + diagram) vào `docs/tickets/` |
+| `npm run create-subtask <KEY>` | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) bằng Playwright thuần qua REST API — thay cho prompt AI `/create-test-sub-task` |
 | `npm test` | Chạy toàn bộ test (headless) |
 | `npm run test:headed` | Chạy test có hiển thị trình duyệt |
 | `npm run test:ui` | Mở Playwright UI Mode (tua thời gian, debug trực quan) |
@@ -132,6 +133,47 @@ Việc "đọc/trích xuất" dùng model rẻ, việc "suy luận/thiết kế 
 ```
 
 Hạ tầng model khi ticket đơn giản: `npm run auto-test <KEY> -- --sonnet` (hoặc `--model claude-sonnet-5`).
+
+### Tạo Jira Test Sub-task không tốn token — `npm run create-subtask`
+
+Prompt `/create-test-sub-task` (mode `agent`) bắt AI click từng bước trên trình
+duyệt để tạo sub-task ⇒ tốn token. Script `scripts/create-subtask.js` làm y hệt
+nhưng **0 token**: tận dụng đúng session/profile SSO đã có (`.auth/jira-profile`)
+rồi gọi thẳng Jira REST API (`POST /rest/api/2/issue`) ngay trong page context
+(dùng chung cookie đăng nhập).
+
+```bash
+# Tạo sub-task "Test in DEV ASAP-5568" (assign to me) cho story ASAP-5568
+npm run create-subtask -- ASAP-5568
+
+# Chạy ẩn (khi session SSO đã hợp lệ, hợp cho CI)
+npm run create-subtask -- ASAP-5568 --headless
+
+# Ghi đè Summary mặc định
+npm run create-subtask -- ASAP-5568 --summary "Test in DEV ASAP-5569"
+
+# Gộp vào pipeline auto-test (tạo sub-task ngay sau khi fetch ticket)
+npm run auto-test ASAP-5568 -- --create-subtask
+```
+
+**Bảng cờ (flags) của `create-subtask`:**
+
+| Cờ / Biến môi trường | Ý nghĩa |
+| --- | --- |
+| *(mặc định)* | Headed — mở cửa sổ Chrome để đăng nhập SSO/2FA lần đầu |
+| `--headless` | Chạy ẩn khi session SSO đã hợp lệ (hợp cho CI) |
+| `--headed` | Buộc mở cửa sổ (ghi đè `CREATE_SUBTASK_HEADLESS`) |
+| `--summary "<text>"` | Ghi đè Summary mặc định (`Test in DEV <KEY>`) |
+| `CREATE_SUBTASK_HEADLESS=1` | Tương đương `--headless` |
+| `JIRA_BASE_URL` | Ghi đè domain Jira (mặc định `https://jira.eon.com`) |
+
+Đặc điểm an toàn:
+- **Idempotent**: nếu sub-task trùng Summary đã tồn tại thì bỏ qua, không tạo trùng.
+- **Headed mặc định** để đăng nhập SSO/2FA lần đầu; **`--headless`** khi phiên đã hợp lệ.
+- Assignee = current user (tương đương "Assign to me"); các field khác giữ mặc định (kế thừa story cha).
+- Xử lý lỗi graceful (chưa đăng nhập, sai key, mạng lỗi) và **không chặn** luồng sinh/kiểm thử test hiện có khi chạy qua `--create-subtask`.
+- Ghi đè domain qua biến môi trường `JIRA_BASE_URL` (mặc định `https://jira.eon.com`).
+
 
 📖 Chi tiết đầy đủ: **[docs/ADVANCED-GUIDE.md](./docs/ADVANCED-GUIDE.md)**.
 

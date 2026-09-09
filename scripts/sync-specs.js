@@ -24,13 +24,20 @@
  * chạy 1 lệnh `npm run sync-specs <KEY>` thay vì gọi thêm bước sinh POM riêng.
  *
  * Usage:
- *   node scripts/sync-specs.js KFWT-1161          # sync recording + đóng gói POM
- *   node scripts/sync-specs.js ADMINISTRATION     # (vd) sync + tests/pages/AdministrationPage.ts
+ *   node scripts/sync-specs.js KFWT-1161          # sync recording + đóng gói POM + starter spec
+ *   node scripts/sync-specs.js ADMINISTRATION     # (vd) sync + tests/pages/AdministrationPage.ts + tests/e2e/TC-ADMINISTRATION.spec.ts
  *   node scripts/sync-specs.js KFWT-1161 --no-pom # chỉ reverse-grounding, không sinh POM
- *   node scripts/sync-specs.js KFWT-1161 --force-pom # ghi đè POM nếu đã tồn tại
+ *   node scripts/sync-specs.js KFWT-1161 --force-pom  # ghi đè POM nếu đã tồn tại
+ *   node scripts/sync-specs.js KFWT-1161 --no-spec    # không sinh starter E2E spec
+ *   node scripts/sync-specs.js KFWT-1161 --force-spec # ghi đè starter spec nếu đã tồn tại
  *   node scripts/sync-specs.js --all              # sync mọi recording trong tests/recordings/
  *   npm run sync-specs KFWT-1161
  *   npm run sync-specs -- --all
+ *
+ * Guard an toàn (non-destructive): POM và starter spec đã tồn tại trên đĩa sẽ KHÔNG
+ * bị ghi đè trừ khi truyền tường minh --force-pom / --force-spec. Entry URL bóc tách
+ * từ recording luôn được làm sạch các đoạn ephemeral `/faces/instances/...` (Axon Ivy
+ * dialog instance dùng-một-lần gây lỗi "View Expired"); runtime ưu tiên process.env.BASE_URL.
  *
  * An toàn: script chỉ ghi vào docs/specs/codebase/live_grounded_components.yaml,
  * KHÔNG bao giờ đụng vào ui_components.yaml / state_machine.yaml (do
@@ -293,6 +300,22 @@ function extractComponents(source, key) {
 function extractEntryUrl(source) {
   const m = source.match(/\.goto\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1/);
   return m ? m[2] : null;
+}
+
+/**
+ * Làm sạch entry URL trước khi lưu/sinh test: các URL codegen ghi lại thường nhúng
+ * một "dialog instance id" DÙNG-MỘT-LẦN của Axon Ivy
+ * (`.../faces/instances/portal$2/<id>/.../Login.xhtml`). Instance id này hết hạn
+ * ở phía server nên khi replay portal trả về trang "View Expired" -> test đỏ giả.
+ *
+ * Quy tắc: cắt bỏ mọi đoạn ephemeral `/faces/instances/...` (và `/faces/dialog/...`)
+ * để lùi về gốc ứng dụng ổn định. Nếu không match thì giữ nguyên URL.
+ * Nơi gọi nên ưu tiên `process.env.BASE_URL` rồi mới tới URL đã làm sạch này.
+ */
+function cleanseEntryUrl(url) {
+  if (!url) return null;
+  const m = String(url).match(/^(https?:\/\/[^'"\s]*?)\/faces\/(?:instances|dialog)\b/i);
+  return m ? m[1] : String(url);
 }
 
 const PAGES_DIR = path.join(ROOT_DIR, 'tests', 'pages');
@@ -600,23 +623,56 @@ function pascal(member) {
   return member.charAt(0).toUpperCase() + member.slice(1);
 }
 
+// Nhận diện locator thuộc form đăng nhập (Username/Password/Login) — dùng để bỏ
+// chúng ra khỏi việc chọn "dashboard entry" và để sinh ensureAuthenticated().
+function isLoginLocator(l) {
+  if (l.locatorType !== 'role') return false;
+  if (l.role === 'textbox' && /^(username|password|user name|user)$/i.test(l.name || '')) return true;
+  if (l.role === 'button' && /^(login|log in|sign in|anmelden)$/i.test(l.name || '')) return true;
+  return false;
+}
+
+/**
+ * Chọn "dashboard entry locator": phần tử page-level (ngoài iframe) đầu tiên KHÔNG
+ * phải form login, ưu tiên role 'link' (thường là link mở process/module). Trả về
+ * member hoặc null nếu recording không có phần tử page-level phù hợp.
+ */
+function pickEntryMember(pageLocators) {
+  const candidates = pageLocators.filter((l) => !isLoginLocator(l));
+  const link = candidates.find((l) => l.locatorType === 'role' && l.role === 'link');
+  const chosen = link || candidates[0] || null;
+  return chosen ? chosen.member : null;
+}
+
 /**
  * Render toàn bộ nội dung file Page Object Model (TypeScript, strict-safe).
  */
-function renderPomClass(pageClass, key, recordingRel, model) {
+function renderPomClass(pageClass, key, recordingRel, model, baseFallback) {
   const { hasFrame, frameTitle, locators } = model;
   const pageLocators = locators.filter((l) => !l.isFrame);
   const frameLocators = locators.filter((l) => l.isFrame);
+  const entryMember = pickEntryMember(pageLocators);
+  const baseLiteral = tsString(baseFallback || '');
 
+  // expect là value import (không phải type) — cần cho ensureAuthenticated().
   const imports = ['Page'];
   if (hasFrame) imports.push('FrameLocator');
   imports.push('Locator');
+  imports.push('expect');
 
   const lines = [];
   lines.push(`import { ${imports.join(', ')} } from '@playwright/test';`);
   lines.push('');
+  lines.push('// Credentials come from the environment (.env via playwright.config.ts) so no secret is');
+  lines.push('// baked into source. Override per-call by passing arguments to ensureAuthenticated().');
+  lines.push('const PORTAL_USERNAME = process.env.TEST_USERNAME || \'\';');
+  lines.push('const PORTAL_PASSWORD = process.env.TEST_PASSWORD || \'\';');
+  lines.push('// Stable entry URL fallback (recorded ephemeral /faces/instances/... segments stripped).');
+  lines.push('// process.env.BASE_URL always takes priority at runtime.');
+  lines.push(`const BASE_URL_FALLBACK = ${baseLiteral};`);
+  lines.push('');
   lines.push('/**');
-  lines.push(` * Page Object Model for the "${key}" module (E.ON KFWT).`);
+  lines.push(` * Page Object Model for the "${key}" module.`);
   lines.push(' *');
   lines.push(` * AUTO-GENERATED by \`npm run sync-specs ${key}\` (scripts/sync-specs.js) from the real`);
   lines.push(` * Playwright codegen recording \`${recordingRel}\`. Every locator below was exercised`);
@@ -636,6 +692,66 @@ function renderPomClass(pageClass, key, recordingRel, model) {
   lines.push('    this.page = page;');
   for (const l of pageLocators) {
     lines.push(`    this.${l.member} = page${locatorExpr(l)};`);
+  }
+  lines.push('  }');
+
+  // ── ensureAuthenticated(): resilient to "View Expired" / expired sessions ──
+  lines.push('');
+  lines.push('  /**');
+  lines.push('   * Ensure the session is authenticated and the module entry point is reachable,');
+  lines.push('   * gracefully recovering from a "View Expired" page or an expired session.');
+  lines.push('   *');
+  lines.push('   * Never depends on a recorded ephemeral instance URL: it (re)navigates to the');
+  lines.push('   * STABLE base URL (process.env.BASE_URL, else BASE_URL_FALLBACK), logs in when a');
+  lines.push('   * login form is shown, and finally waits for the entry point to be visible.');
+  lines.push('   */');
+  lines.push('  async ensureAuthenticated(');
+  lines.push('    username: string = PORTAL_USERNAME,');
+  lines.push('    password: string = PORTAL_PASSWORD');
+  lines.push('  ): Promise<void> {');
+  lines.push(
+    "    const baseUrl = (process.env.BASE_URL || BASE_URL_FALLBACK).replace(/\\/+$/, '') + '/';"
+  );
+  if (entryMember) {
+    // Robust against the portal's client-side redirect chain: after goto(), the login
+    // form is NOT visible immediately. Each attempt waits for the page to SETTLE on
+    // either the login form or the entry point (whichever wins the race) before acting.
+    lines.push('    await this.page.goto(baseUrl);');
+    lines.push('    for (let attempt = 0; attempt < 3; attempt++) {');
+    lines.push('      await Promise.race([');
+    lines.push(
+      "        this.page.getByRole('textbox', { name: 'Username' }).waitFor({ state: 'visible', timeout: 30000 }),"
+    );
+    lines.push(`        this.${entryMember}.waitFor({ state: 'visible', timeout: 30000 })`);
+    lines.push('      ]).catch(() => undefined);');
+    lines.push(`      if (await this.${entryMember}.isVisible().catch(() => false)) {`);
+    lines.push('        return; // Already authenticated on the entry point.');
+    lines.push('      }');
+    lines.push(
+      "      const usernameField = this.page.getByRole('textbox', { name: 'Username' });"
+    );
+    lines.push('      if (!(await usernameField.isVisible().catch(() => false))) {');
+    lines.push('        continue; // Neither settled yet: retry the wait.');
+    lines.push('      }');
+    lines.push('      await usernameField.fill(username);');
+    lines.push("      await this.page.getByRole('textbox', { name: 'Password' }).fill(password);");
+    lines.push("      await this.page.getByRole('button', { name: 'Login' }).click();");
+    lines.push(
+      `      if (await this.${entryMember}.waitFor({ state: 'visible', timeout: 20000 }).then(() => true).catch(() => false)) {`
+    );
+    lines.push('        return;');
+    lines.push('      }');
+    lines.push('    }');
+    lines.push(`    await expect(this.${entryMember}).toBeVisible({ timeout: 15000 });`);
+  } else {
+    lines.push('    await this.page.goto(baseUrl);');
+    lines.push("    const usernameField = this.page.getByRole('textbox', { name: 'Username' });");
+    lines.push('    if (await usernameField.isVisible({ timeout: 5000 }).catch(() => false)) {');
+    lines.push('      await usernameField.fill(username);');
+    lines.push("      await this.page.getByRole('textbox', { name: 'Password' }).fill(password);");
+    lines.push("      await this.page.getByRole('button', { name: 'Login' }).click();");
+    lines.push('    }');
+    lines.push("    await this.page.waitForLoadState('networkidle');");
   }
   lines.push('  }');
 
@@ -699,7 +815,13 @@ function generatePom(key, { force = false } = {}) {
     return { status: 'exists', outRel, pageClass, recordingRel, locatorCount: model.locators.length };
   }
 
-  const { code, methodCount } = renderPomClass(pageClass, key, recordingRel, model);
+  const { code, methodCount } = renderPomClass(
+    pageClass,
+    key,
+    recordingRel,
+    model,
+    cleanseEntryUrl(extractEntryUrl(source))
+  );
   fs.mkdirSync(PAGES_DIR, { recursive: true });
   fs.writeFileSync(outFull, code, 'utf-8');
 
@@ -711,6 +833,138 @@ function generatePom(key, { force = false } = {}) {
     locatorCount: model.locators.length,
     methodCount
   };
+}
+
+const E2E_DIR = path.join(ROOT_DIR, 'tests', 'e2e');
+
+/**
+ * Chuẩn hoá KEY -> tiêu đề đọc được cho describe block ("SEARCH_TELECONTROL" ->
+ * "Search Telecontrol").
+ */
+function toTitle(key) {
+  return String(key || '')
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+}
+
+/**
+ * Render nội dung file starter E2E spec (TypeScript) từ model của recording.
+ * Spec import Page Object đã sinh, điều hướng qua process.env.BASE_URL, gọi
+ * ensureAuthenticated() rồi thực thi các action đã ghi với assertion an toàn.
+ */
+function renderSpecFile(pageClass, key, recordingRel, model, baseFallback) {
+  const { locators } = model;
+  const pageLocators = locators.filter((l) => !l.isFrame);
+  const frameLocators = locators.filter((l) => l.isFrame);
+  const entryMember = pickEntryMember(pageLocators);
+  const entryLocator = pageLocators.find((l) => l.member === entryMember) || null;
+
+  // Method điều hướng vào module: click trên entry link (nếu có action click).
+  let navigateMethod = null;
+  if (entryLocator && entryLocator.actions && entryLocator.actions.has('click')) {
+    navigateMethod = `click${pascal(entryMember)}`;
+  }
+  // Phần tử "trong module" để assert sau khi mở (ưu tiên locator trong iframe).
+  const moduleMember = frameLocators.length
+    ? frameLocators[0].member
+    : (pageLocators.find((l) => !isLoginLocator(l) && l.member !== entryMember) || {}).member || null;
+
+  const title = toTitle(key);
+  const inst = 'pom';
+  const L = [];
+  L.push("import { test, expect } from '@playwright/test';");
+  L.push(`import { ${pageClass} } from '../pages/${pageClass}';`);
+  L.push('');
+  L.push('/**');
+  L.push(` * TC-${key}: clean STARTER E2E spec.`);
+  L.push(' *');
+  L.push(` * AUTO-GENERATED (0 AI tokens, local CPU) by \`npm run sync-specs ${key}\``);
+  L.push(` * (scripts/sync-specs.js) from the real Playwright recording \`${recordingRel}\`.`);
+  L.push(' *');
+  L.push(` * It authenticates via ${pageClass}.ensureAuthenticated() (which resolves the stable`);
+  L.push(' * process.env.BASE_URL and recovers from a "View Expired" page), then exercises the');
+  L.push(' * recorded actions with safe visibility assertions. Extend it with real business');
+  L.push(' * assertions; re-run with `--force-spec` to regenerate (this overwrites custom edits).');
+  L.push(' */');
+  L.push(`const BASE_URL = (process.env.BASE_URL || ${tsString(baseFallback || '')}).replace(/\\/+$/, '') + '/';`);
+  L.push('');
+  L.push(`test.describe('TC-${key}: ${title} (starter)', () => {`);
+  L.push(`  test('TC-${key}-01: authenticate and reach the module entry point', async ({ page }) => {`);
+  L.push(`    const ${inst} = new ${pageClass}(page);`);
+  L.push('');
+  L.push("    await test.step('Given the tester opens the stable base URL and authenticates', async () => {");
+  L.push('      await page.goto(BASE_URL);');
+  L.push(`      await ${inst}.ensureAuthenticated();`);
+  L.push('    });');
+  if (entryMember) {
+    L.push('');
+    L.push("    await test.step('Then the module entry point is visible', async () => {");
+    L.push(`      await expect(${inst}.${entryMember}).toBeVisible();`);
+    L.push('    });');
+  }
+  if (navigateMethod && moduleMember) {
+    L.push('');
+    L.push("    await test.step('When the tester opens the module', async () => {");
+    L.push(`      await ${inst}.${navigateMethod}();`);
+    L.push('    });');
+    L.push('');
+    L.push("    await test.step('Then a module element is displayed', async () => {");
+    L.push(`      await expect(${inst}.${moduleMember}).toBeVisible();`);
+    L.push('    });');
+  }
+  L.push('  });');
+  L.push('});');
+  L.push('');
+
+  // Scaffold liệt kê mọi action method đã sinh để Tester dễ soạn flow nghiệp vụ thật.
+  L.push('// ── Recorded action methods available on ' + pageClass + ' (compose real flows) ──');
+  for (const l of locators) {
+    const actions = Array.from(l.actions).sort();
+    for (const action of actions) {
+      const meta = POM_ACTION_META[action];
+      if (!meta) continue;
+      const arg = meta.param ? `<${meta.param.name}>` : '';
+      L.push(`//   await ${inst}.${action}${pascal(l.member)}(${arg});`);
+    }
+  }
+  L.push('');
+  return L.join('\n');
+}
+
+/**
+ * Sinh (đóng gói) starter E2E spec cho KEY. Non-destructive guard: KHÔNG ghi đè
+ * file spec đã tồn tại trừ khi options.force = true (--force-spec).
+ */
+function generateSpec(key, { force = false } = {}) {
+  const pageClass = toPascalCasePageName(key);
+  const specRel = `tests/e2e/TC-${key}.spec.ts`;
+  const specFull = path.join(E2E_DIR, `TC-${key}.spec.ts`);
+  const recordingFull = path.join(RECORDINGS_DIR, `${key}.recording.ts`);
+  const recordingRel = `tests/recordings/${key}.recording.ts`;
+  const pomFull = path.join(PAGES_DIR, `${pageClass}.ts`);
+
+  if (!fs.existsSync(recordingFull)) return { status: 'missing', specRel, pageClass, recordingRel };
+  const source = fs.readFileSync(recordingFull, 'utf-8');
+  if (!hasRealInteractions(source)) return { status: 'empty', specRel, pageClass, recordingRel };
+
+  const model = extractPomModel(source);
+  if (!model.locators.length) return { status: 'no-locators', specRel, pageClass, recordingRel };
+
+  // Spec import Page Object -> cần POM tồn tại để biên dịch được.
+  if (!fs.existsSync(pomFull)) return { status: 'no-pom', specRel, pageClass, recordingRel };
+
+  const existed = fs.existsSync(specFull);
+  if (existed && !force) {
+    return { status: 'exists', specRel, pageClass, recordingRel };
+  }
+
+  const code = renderSpecFile(pageClass, key, recordingRel, model, cleanseEntryUrl(extractEntryUrl(source)));
+  fs.mkdirSync(E2E_DIR, { recursive: true });
+  fs.writeFileSync(specFull, code, 'utf-8');
+
+  return { status: existed ? 'overwritten' : 'created', specRel, pageClass, recordingRel };
 }
 
 function loadLiveSpec() {
@@ -753,7 +1007,7 @@ function syncRecording(spec, key) {
   const entry = {
     key,
     recording: recordingRel,
-    entryUrl: extractEntryUrl(source),
+    entryUrl: cleanseEntryUrl(extractEntryUrl(source)),
     syncedAt: new Date().toISOString(),
     componentCount: components.length,
     components
@@ -792,6 +1046,11 @@ function syncKey(key, options = {}) {
   // clobber curated Page Objects during a regenerate; the CLI enables it by default.
   if (options.generatePom) {
     out.pom = generatePom(normalized, { force: options.forcePom === true });
+  }
+  // Starter spec generation is likewise opt-in and guarded: an existing spec is
+  // never overwritten unless options.forceSpec (--force-spec) is set.
+  if (options.generateSpec) {
+    out.spec = generateSpec(normalized, { force: options.forceSpec === true });
   }
   return out;
 }
@@ -832,6 +1091,39 @@ function reportPom(key, pom) {
   }
 }
 
+/**
+ * Report kết quả sinh starter spec ra CLI.
+ */
+function reportSpec(key, spec) {
+  switch (spec.status) {
+    case 'created':
+      console.log(`🧪 ${key}: sinh starter spec → ${spec.specRel} (import ${spec.pageClass}).`);
+      break;
+    case 'overwritten':
+      console.log(`🧪 ${key}: ghi đè starter spec (--force-spec) → ${spec.specRel}.`);
+      break;
+    case 'exists':
+      console.log(
+        `↩️  ${key}: spec đã tồn tại ${spec.specRel} → giữ nguyên (dùng --force-spec để ghi đè).`
+      );
+      break;
+    case 'no-pom':
+      console.warn(`⚠️  ${key}: chưa có Page Object → bỏ qua sinh spec (đừng dùng --no-pom).`);
+      break;
+    case 'missing':
+      console.warn(`⚠️  ${key}: không thấy ${spec.recordingRel} → bỏ qua sinh spec.`);
+      break;
+    case 'empty':
+      console.warn(`⚠️  ${key}: recording không có thao tác thật → bỏ qua sinh spec.`);
+      break;
+    case 'no-locators':
+      console.warn(`⚠️  ${key}: không bóc tách được locator sạch nào → bỏ qua sinh spec.`);
+      break;
+    default:
+      console.warn(`⚠️  ${key}: spec status = ${spec.status}`);
+  }
+}
+
 function listRecordingKeys() {
   if (!fs.existsSync(RECORDINGS_DIR)) return [];
   return fs
@@ -846,6 +1138,8 @@ function main() {
   const all = argv.includes('--all');
   const noPom = argv.includes('--no-pom');
   const forcePom = argv.includes('--force-pom');
+  const noSpec = argv.includes('--no-spec');
+  const forceSpec = argv.includes('--force-spec');
   const positional = argv.find((a) => !a.startsWith('--'));
 
   console.log('======================================================');
@@ -862,8 +1156,8 @@ function main() {
   } else {
     const key = parseTicketKey(positional);
     if (!key) {
-      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [--no-pom] [--force-pom]\x1b[0m');
-      console.log('          npm run sync-specs -- --all [--no-pom] [--force-pom]');
+      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [--no-pom] [--force-pom] [--no-spec] [--force-spec]\x1b[0m');
+      console.log('          npm run sync-specs -- --all [--no-pom] [--force-pom] [--no-spec] [--force-spec]');
       console.log('   Example: npm run sync-specs ADMINISTRATION\n');
       process.exit(1);
     }
@@ -908,25 +1202,46 @@ function main() {
     console.log('\nℹ️  Không có thay đổi reverse-grounding nào được ghi.');
   }
 
-  // ─── Bước 2 (MỚI): tự động đóng gói Page Object Model chuẩn ───
+  // ─── Bước 2: tự động đóng gói Page Object Model chuẩn ───
   if (noPom) {
-    console.log('\nℹ️  --no-pom: bỏ qua bước đóng gói Page Object Model.\n');
+    console.log('\nℹ️  --no-pom: bỏ qua bước đóng gói Page Object Model.');
+  } else {
+    console.log('');
+    console.log('------------------------------------------------------');
+    console.log(' 📦 POM packaging: Recording -> tests/pages/<Key>Page.ts');
+    console.log('------------------------------------------------------');
+    let pomGenerated = 0;
+    for (const key of keys) {
+      const pom = generatePom(key, { force: forcePom });
+      if (pom.status === 'created' || pom.status === 'overwritten') pomGenerated++;
+      reportPom(key, pom);
+    }
+    console.log('------------------------------------------------------');
+    console.log(
+      `📦 POM packaging xong: ${pomGenerated}/${keys.length} file được ${forcePom ? 'ghi/ghi đè' : 'sinh mới'}.`
+    );
+    console.log('------------------------------------------------------');
+  }
+
+  // ─── Bước 3 (MỚI): sinh starter E2E spec (có guard chống ghi đè) ───
+  if (noSpec) {
+    console.log('\nℹ️  --no-spec: bỏ qua bước sinh starter E2E spec.\n');
     return;
   }
 
   console.log('');
   console.log('------------------------------------------------------');
-  console.log(' 📦 POM packaging: Recording -> tests/pages/<Key>Page.ts');
+  console.log(' 🧪 Starter spec: Recording -> tests/e2e/TC-<KEY>.spec.ts');
   console.log('------------------------------------------------------');
-  let pomGenerated = 0;
+  let specGenerated = 0;
   for (const key of keys) {
-    const pom = generatePom(key, { force: forcePom });
-    if (pom.status === 'created' || pom.status === 'overwritten') pomGenerated++;
-    reportPom(key, pom);
+    const spec = generateSpec(key, { force: forceSpec });
+    if (spec.status === 'created' || spec.status === 'overwritten') specGenerated++;
+    reportSpec(key, spec);
   }
   console.log('------------------------------------------------------');
   console.log(
-    `📦 POM packaging xong: ${pomGenerated}/${keys.length} file được ${forcePom ? 'ghi/ghi đè' : 'sinh mới'}.`
+    `🧪 Starter spec xong: ${specGenerated}/${keys.length} file được ${forceSpec ? 'ghi/ghi đè' : 'sinh mới'}.`
   );
   console.log('------------------------------------------------------\n');
 }
@@ -938,6 +1253,8 @@ module.exports = {
   extractPrimefacesId,
   toPascalCasePageName,
   generatePom,
+  generateSpec,
+  cleanseEntryUrl,
   extractPomModel,
   LIVE_SPEC_REL
 };

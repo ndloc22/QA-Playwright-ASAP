@@ -73,6 +73,8 @@ Mọi Story/Ticket **BẮT BUỘC** phải được phân rã thành nhiều Tes
 
 ## ỔN ĐỊNH & TÁI LẬP (chống flaky = chống "fail liên tục")
 - Thêm `test.beforeEach` để điều hướng và **đưa app về trạng thái sạch** (điều hướng `goto`, xóa localStorage/cookies nếu cần, đăng nhập qua fixture nếu cần precondition).
+- **CẤM hard-code URL "instance" dùng-một-lần của Axon Ivy.** Recording (codegen) thường mở màn hình bằng URL dạng `.../faces/instances/portal$2/<instanceId>/.../Login.xhtml`. `<instanceId>` là dialog instance **ephemeral** (server sinh mỗi phiên), replay lại sẽ ra trang **"View Expired"** → test đỏ giả ngay cả trên context mới. Khi lấy entry URL từ recording, **PHẢI làm sạch**: cắt bỏ đoạn `/faces/instances/...` và **ưu tiên `process.env.BASE_URL`** (URL portal ổn định). Đặt hằng `const PORTAL_ENTRY_URL = process.env.BASE_URL || '<base-url-ổn-định>';` và `goto(PORTAL_ENTRY_URL)`.
+- **Dùng `ensureAuthenticated()` trong Page Object** thay vì dựa vào một instance URL/`.auth/user.json` dễ hết hạn: method này điều hướng về `BASE_URL`, tự đăng nhập lại khi thấy form login, và chờ link dashboard hiện ra — chịu được cả trạng thái "View Expired". `npm run sync-specs <KEY>` tự sinh sẵn `ensureAuthenticated()` cho mỗi POM; hãy gọi nó trong `beforeEach`.
 - Ưu tiên **web-first assertions có auto-wait** thay vì `waitForTimeout` cứng. Dùng `waitForLoadState`/chờ điều kiện khi thật sự cần.
 - Precondition dữ liệu (ví dụ "đã có 1 công việc") phải được **tạo trong test qua bước setup**, không giả định app tự có sẵn.
 - Tách **test data** thành hằng số ở đầu test để dễ đọc và sửa.

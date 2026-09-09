@@ -798,7 +798,13 @@ function synthesizeStubTicketFromRecording(ticketMdPath) {
   }
 
   const raw = fs.readFileSync(RECORDING_FULL_PATH, 'utf-8');
-  const entryUrl = (raw.match(/\.goto\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1/) || [])[2] || 'N/A';
+  const rawEntryUrl = (raw.match(/\.goto\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1/) || [])[2] || null;
+  // Cleanse ephemeral Axon Ivy dialog-instance segments (`.../faces/instances/...` →
+  // "View Expired" on replay); prefer the stable process.env.BASE_URL so the synthesized
+  // stub never immortalises a one-time-use recorded URL.
+  const entryUrl =
+    process.env.BASE_URL ||
+    (rawEntryUrl ? rawEntryUrl.replace(/\/faces\/(?:instances|dialog)\b.*$/i, '') : 'N/A');
   const flow = summarizeRecordingFlow(raw);
   const title = key
     .split(/[-_]/)

@@ -1,17 +1,9 @@
-# 🧪 QA Playwright Copilot Starter Kit — ASAP
+# ⚡ E.ON KFWT — Playwright E2E Automation (Retrofit / Nachrüstvariante)
 
-### Bộ Khởi Động Kiểm Thử E2E theo Kiến Trúc **Testcase-First** + GitHub Copilot
+> Kiểm thử tự động E2E cho quy trình **Retrofit C-Station** thuộc hệ **Kleinfernwirktechnik (KFWT)** của **E.ON**.
+> Nền tảng: **Playwright + TypeScript + Page Object Model + GitHub Copilot**.
 
-> Từ 1 mã Ticket → testcase + Playwright spec hoàn chỉnh, **grounding vào DOM thật** (không đoán selector), chạy **1-Click** và tự chẩn đoán khi lỗi — tối ưu chi phí token AI.
-
-<p align="left">
-  <img alt="Playwright" src="https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white">
-  <img alt="GitHub Copilot" src="https://img.shields.io/badge/GitHub%20Copilot-000000?logo=githubcopilot&logoColor=white">
-  <img alt="Node.js" src="https://img.shields.io/badge/Node.js%2020%2B-339933?logo=node.js&logoColor=white">
-</p>
-
-> 💡 Dự án kiểm thử tự động hóa E2E dành riêng cho team **ASAP**. Định dạng ticket mặc định là `ASAP-<ID>` (ví dụ `ASAP-101`), trỏ `BASE_URL` sang máy chủ test của dự án ASAP là dùng được ngay.
+Từ 1 mã Jira Ticket → testcase + Playwright spec hoàn chỉnh, grounding vào DOM thật, tối ưu token AI.
 
 ---
 
@@ -21,8 +13,8 @@ Dự án phục vụ **2 nhóm người dùng** với mục đích khác nhau. H
 
 | Nhóm | Bạn là ai? | Bạn muốn làm gì? | Đi tới |
 | :-: | --- | --- | --- |
-| **1** | Làm việc với **Jira Ticket (ASAP)** | Sinh testcase + spec **tự động từ ticket** rồi kiểm chứng trên web thật | [→ Nhóm 1: Auto-Test từ Ticket](#-nhóm-1--người-làm-việc-với-jira-ticket) |
-| **2** | Chỉ **chạy test có sẵn** | Chạy các test function/module **đã viết** và xem kết quả (không cần ticket) | [→ Nhóm 2: Chạy test có sẵn](#-nhóm-2--người-chỉ-chạy-test-có-sẵn) |
+| **1** | Làm việc với **Jira Ticket** | Sinh testcase + spec **tự động từ ticket** rồi kiểm chứng trên web thật (`auto-test` → `record:ticket` → `regenerate`) | [→ Nhóm 1: Auto-Test từ Jira](#-nhóm-1--người-làm-việc-với-jira-ticket) |
+| **2** | Tạo & kiểm thử **function/module** | Tự **tạo mới một function** độc lập (vd `ADMINISTRATION`, `SEARCH_TELECONTROL`): ghi hình flow → sinh POM + spec → chạy & debug | [→ Nhóm 2: Tạo & chạy function](#-nhóm-2--người-tạo--kiểm-thử-functionmodule) |
 
 > ✅ **Cả 2 nhóm** đều cần làm [Cài Đặt](#-cài-đặt) + [Thiết Lập Môi Trường](#-thiết-lập-môi-trường) một lần duy nhất trước khi bắt đầu.
 
@@ -31,8 +23,8 @@ Dự án phục vụ **2 nhóm người dùng** với mục đích khác nhau. H
 ## ⚙️ Cài Đặt
 
 ```bash
-git clone https://github.com/ndloc22/QA-Playwright-ASAP.git
-cd QA-Playwright-ASAP
+git clone https://github.com/ndloc22/QA-Playwright-KFWT-Retrofit.git
+cd QA-Playwright-KFWT-Retrofit
 ```
 
 Rồi chạy cài đặt tự động (cài Node modules + Playwright browser):
@@ -43,17 +35,20 @@ Rồi chạy cài đặt tự động (cài Node modules + Playwright browser):
 
 ## 🌐 Thiết Lập Môi Trường
 
-Tạo file `.env` (tham khảo `.env.example`) và trỏ `BASE_URL` sang ứng dụng bạn muốn kiểm thử:
+Dự án có sẵn **Web App Mockup KFWT** chạy ngầm ở cổng `3001` — **có thể chạy lại các test đã có ngay mà không cần cấu hình gì thêm**.
+
+Để chạy trên **môi trường thật E.ON** — bắt buộc khi **ghi hình flow** (`record:ticket`) hoặc **kiểm chứng** (áp dụng cho **cả Nhóm 1 lẫn Nhóm 2**) — tạo file `.env` (tham khảo `.env.example`):
 
 ```ini
-# App under test (mặc định ví dụ: TodoMVC demo)
-BASE_URL=https://demo.playwright.dev/todomvc
+# Server Test E.ON
+BASE_URL=https://bolt.server.ivy-cloud.com/ivy_12_kf/EON_LDAP/kleinfernwirktechnik
 
-# Tài khoản đăng nhập (tùy chọn — chỉ khi app yêu cầu auth, dùng cho login & ghi hình)
+# Tài khoản đăng nhập (dùng cho login & ghi hình)
 TEST_USERNAME=your_username
 TEST_PASSWORD=your_password
 ```
 
+> 💡 Không set `BASE_URL` → tự chạy trên mock server cục bộ (`http://127.0.0.1:3001`).
 > 🔐 Session đăng nhập được lưu tại `.auth/user.json` để `record:ticket` vào thẳng app đã login, không phải re-login mỗi lần.
 
 ---
@@ -62,20 +57,21 @@ TEST_PASSWORD=your_password
 
 ## 🎫 NHÓM 1 — Người làm việc với Jira Ticket
 
-> **Mục tiêu:** Từ **1 mã ticket ASAP** → sinh ra testcase + Playwright spec hoàn chỉnh, bám selector DOM thật.
-> **Yêu cầu:** đã cấu hình `.env` trỏ tới app test của team ASAP.
+> **Mục tiêu:** Từ **1 mã Jira** → sinh ra testcase + Playwright spec hoàn chỉnh, bám selector DOM thật.
+>
+> **Yêu cầu:** đã cấu hình `.env` trỏ tới server thật E.ON.
 
 ### Quy trình 3 bước chuẩn (mỗi ticket)
 
 ```bash
-# 1️⃣ Sinh testcase & spec từ ticket (fetch → summarize → analyze → generate → verify)
-npm run auto-test ASAP-101
+# 1️⃣ Sinh testcase & spec từ Jira (fetch ticket → summarize → analyze → generate → verify)
+npm run auto-test KFWT-1161
 
 # 2️⃣ Mở web thật, click qua đúng flow chính rồi đóng cửa sổ → tự xuất recording
-npm run record:ticket ASAP-101
+npm run record:ticket KFWT-1161
 
 # 3️⃣ Regenerate: tự tham chiếu recording, gỡ test.fixme, đồng bộ OpenSpecs & verify test
-npm run regenerate ASAP-101
+npm run regenerate KFWT-1161
 ```
 
 | Bước | Lệnh | Kết quả sinh ra |
@@ -84,9 +80,8 @@ npm run regenerate ASAP-101
 | 2 | `npm run record:ticket <KEY>` | `tests/recordings/<KEY>.recording.ts` (DOM/selector thật) |
 | 3 | `npm run regenerate <KEY>` | Spec bám selector thật, gỡ `test.fixme`, cập nhật OpenSpecs |
 
-> 💡 Có thể thay `<KEY>` bằng link Jira đầy đủ: `npm run auto-test https://your-jira/browse/ASAP-101`.
+> 💡 Có thể thay `<KEY>` bằng link Jira đầy đủ: `npm run auto-test https://jira.eon.com/browse/KFWT-1161`.
 > 💰 Ticket đơn giản → hạ tầng model cho rẻ: `npm run auto-test <KEY> -- --sonnet` (hoặc `--model claude-sonnet-5`).
-> ⚡ Tạo luôn Jira Test Sub-task 0 token ngay khi sinh test: `npm run auto-test ASAP-101 -- --create-subtask`.
 
 ### Các lệnh phụ trợ cho Nhóm 1
 
@@ -95,52 +90,76 @@ npm run regenerate ASAP-101
 | `npm run fetch-ticket <KEY>` | Bóc tách Jira ticket (text + ảnh + diagram) vào `docs/tickets/` |
 | `npm run create-subtask <KEY> [KEY2 ...]` | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) qua REST API — hỗ trợ **multi-ticket** |
 | `npm run sync-specs <KEY>` | Merge selector từ recording vào OpenSpecs (không ghi đè file đã có) |
-| `npm run sync-specs <KEY> force` | **Ghi đè** cả POM lẫn spec ngay — không cần nhớ cú pháp `--` |
+| `npm run sync-specs <KEY> force` | **Ghi đè** cả POM lẫn spec ngay |
 | `npm run sync-specs:force <KEY>` | Alias 1-click tương đương lệnh trên |
-| `npm run generate-codebase-specs` | Bóc tách OpenSpecs từ mã nguồn ứng dụng (nếu có) |
+| `npm run generate-codebase-specs` | Bóc tách OpenSpecs từ mã nguồn Axon Ivy |
 
-> ✅ Sau bước 3, spec đã bám selector thật — **chuyển sang phần [Nhóm 2](#-nhóm-2--người-chỉ-chạy-test-có-sẵn) để chạy & xem kết quả test.**
+> ✅ Sau bước 3, spec đã bám selector thật — **chuyển sang phần [Nhóm 2](#-nhóm-2--người-tạo--kiểm-thử-functionmodule) để chạy & xem kết quả test.**
 
 ---
 
-## ▶️ NHÓM 2 — Người chỉ chạy test có sẵn
+## ▶️ NHÓM 2 — Người tạo & kiểm thử function/module
 
-> **Mục tiêu:** Chạy các test function/module **đã có sẵn** trong `tests/e2e/` và xem kết quả — **không cần Jira ticket, không cần AI.**
-> **Yêu cầu:** chỉ cần đã [Cài Đặt](#-cài-đặt).
+> **Mục tiêu:** Tự **tạo mới một function/module độc lập** (vd `ADMINISTRATION`, `SEARCH_TELECONTROL`) — ghi hình flow trên web thật → sinh **Page Object Model + Starter Spec** → chạy & debug function đó. **Không cần Jira ticket.**
+>
+> **Yêu cầu:** đã [Cài Đặt](#-cài-đặt). Cần `.env` trỏ server thật E.ON khi **ghi hình**; khi chỉ **chạy lại test đã có** thì không cấu hình `.env` → tự chạy trên mock server cục bộ.
 
-### Lệnh chạy test cơ bản
+### Quy trình tạo function mới (2 bước chuẩn)
+
+```bash
+# 1️⃣ Ghi hình flow của function trên web thật (đặt tên function, KHÔNG cần mã Jira)
+npm run record:ticket ADMINISTRATION
+
+# 2️⃣ Sinh Page Object Model + Starter Spec từ recording vừa ghi
+npm run sync-specs ADMINISTRATION
+
+#    (tùy chọn) Ghi đè khi POM/spec của function đã tồn tại từ trước
+npm run sync-specs:force ADMINISTRATION
+```
+
+| Bước | Lệnh | Kết quả sinh ra |
+| :-: | --- | --- |
+| 1 | `npm run record:ticket <FUNCTION_NAME>` | `tests/recordings/<FUNCTION_NAME>.recording.ts` (DOM/selector thật) |
+| 2 | `npm run sync-specs <FUNCTION_NAME>` | `tests/pages/<FunctionName>Page.ts` (POM) + `tests/e2e/TC-<FUNCTION_NAME>.spec.ts` (starter spec) |
+| 2* | `npm run sync-specs:force <FUNCTION_NAME>` | **Ghi đè** POM + spec đã có (mặc định KHÔNG ghi đè để an toàn) |
+
+> 💡 `<FUNCTION_NAME>` là tên module tự đặt (chữ IN HOA, vd `ADMINISTRATION`, `SEARCH_TELECONTROL`). POM được đặt tên PascalCase (`AdministrationPage.ts`).
+> 🔁 `sync-specs` còn **merge ngược** selector thật vào OpenSpecs (Reverse-Grounding) → function sau tái dùng ngay selector đã kiểm chứng.
+
+### Chạy & Debug một function
+
+```bash
+# Chạy toàn bộ spec của 1 function
+npx playwright test tests/e2e/TC-ADMINISTRATION.spec.ts
+
+# Chạy đúng 1 testcase cụ thể trong function (filter -g theo mã testcase)
+npx playwright test tests/e2e/TC-ADMINISTRATION.spec.ts -g "01"
+
+# Debug step-by-step đúng testcase đó (dừng từng bước)
+npx playwright test tests/e2e/TC-ADMINISTRATION.spec.ts -g "01" --debug
+```
 
 | Lệnh | Công dụng |
 | --- | --- |
-| `npm test` | Chạy **toàn bộ** test **tuần tự** (1 worker — tránh xung đột session server) |
+| `npm run test:ui` | Mở **Playwright UI Mode** (tua thời gian, debug trực quan từng bước) |
 | `npm run test:headed` | Chạy test **có hiển thị trình duyệt** để quan sát trực tiếp |
-| `npm run test:ui` | Mở **Playwright UI Mode** (tua thời gian, debug trực quan) |
 | `npm run test:debug` | Chạy test ở chế độ **debug** (dừng từng bước) |
-| `npm run report` | Mở **HTML report** + xem lại **video Full-HD 1080p** |
-| `npm run clean` | Xóa sạch video & báo cáo cũ (`test-results/`, `playwright-report/`) |
+| `npm run report` | Mở **HTML report** + xem lại **video Full-HD 1080p** của function |
+| `npm run clean` | Dọn dẹp video & báo cáo cũ (`test-results/`, `playwright-report/`) |
 
-### Chạy 1 test / 1 module cụ thể
-
-```bash
-# Chạy 1 file spec cụ thể
-npx playwright test tests/e2e/TC-ASAP-101.spec.ts
-
-# Chạy 1 test case theo mã hoặc tên (filter -g)
-npx playwright test tests/e2e/TC-ASAP-101.spec.ts -g "01"
-
-# Debug đúng 1 test case đó
-npx playwright test tests/e2e/TC-ASAP-101.spec.ts -g "01" --debug
-```
+Các function/spec đang có sẵn: `TC-LOGIN`, `TC-SEARCH_TELECONTROL`, `TC-ADMINISTRATION`, `TC-KFWT-1161` (trong `tests/e2e/`).
 
 > 🖱️ **Trong VSCode:** bấm **`F5`** hoặc mở tab 🧪 **Testing** → nút ▶️ Play (hoặc 🐞 Debug từng test).
 
-### Tùy chọn nâng cao khi chạy test
+### Lệnh bổ trợ & tùy chọn nâng cao
 
 | Nhu cầu | Lệnh / Thiết lập |
 | --- | --- |
-| Chạy **song song** (chỉ khi test trên mock cục bộ) | `npm test -- --workers=4` |
+| Chạy **toàn bộ** function **tuần tự** (1 worker — tránh xung đột session server) | `npm test` |
+| Chạy **song song** nhiều function (chỉ khi test trên mock cục bộ) | `npm test -- --workers=4` |
 | Xem video **chậm hơn** để thuyết trình | `set SLOWMO=800` rồi chạy test |
 | Chạy **nhanh tối đa** (tắt giãn nhịp) | `set SLOWMO=0` rồi chạy test |
+| Chạy **mock/demo server** thủ công | `npm run server` |
 
 > 🎥 **Video tự động quay Full-HD (1920×1080)** cho **mọi** lần chạy (kể cả khi PASS). Nhịp thao tác mặc định **400 ms/bước** để tester xem lại rõ ràng. Xem lại bằng `npm run report`.
 
@@ -150,15 +169,15 @@ npx playwright test tests/e2e/TC-ASAP-101.spec.ts -g "01" --debug
 
 | Lệnh | Nhóm | Công dụng |
 | --- | :-: | --- |
-| `npm run auto-test <KEY>` | 1 | Pipeline 4 bước: fetch ticket → summarize → analyze + generate → verify |
+| `npm run auto-test <KEY>` | 1 | Pipeline 4 bước: fetch Jira → summarize → analyze + generate → verify |
 | `npm run regenerate <KEY>` | 1 | Regenerate spec từ recording (bỏ qua fetch/summarize), gỡ `test.fixme` |
-| `npm run record:ticket <KEY>` | 1 | Mở web thật + codegen, ghi flow → `tests/recordings/<KEY>.recording.ts` |
-| `npm run fetch-ticket <KEY>` | 1 | Bóc tách ticket (text + ảnh + diagram) vào `docs/tickets/` |
+| `npm run record:ticket <KEY|FUNCTION>` | 1·2 | Mở web thật + codegen, ghi flow → `tests/recordings/<KEY>.recording.ts` |
+| `npm run fetch-ticket <KEY>` | 1 | Bóc tách Jira ticket (text + ảnh + diagram) vào `docs/tickets/` |
 | `npm run create-subtask <KEY> [KEY2 ...]` | 1 | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) qua REST API |
-| `npm run sync-specs <KEY>` | 1 | Merge selector từ recording vào OpenSpecs (không ghi đè) |
-| `npm run sync-specs <KEY> force` | 1 | **Ghi đè** cả POM lẫn spec ngay |
-| `npm run sync-specs:force <KEY>` | 1 | Alias 1-click tương đương lệnh trên |
-| `npm run generate-codebase-specs` | 1 | Bóc tách OpenSpecs từ mã nguồn ứng dụng (nếu có) |
+| `npm run sync-specs <KEY|FUNCTION>` | 1·2 | Merge selector (Reverse-Grounding) + sinh POM & starter spec (không ghi đè file đã có) |
+| `npm run sync-specs <KEY|FUNCTION> force` | 1·2 | **Ghi đè** cả POM lẫn spec ngay |
+| `npm run sync-specs:force <KEY|FUNCTION>` | 1·2 | Alias 1-click tương đương lệnh trên |
+| `npm run generate-codebase-specs` | 1 | Bóc tách OpenSpecs từ mã nguồn Axon Ivy |
 | `npm test` | 2 | Chạy toàn bộ test **tuần tự** (1 worker) |
 | `npm test -- --workers=4` | 2 | Chạy song song (chỉ dùng trên mock server cục bộ) |
 | `npm run test:headed` | 2 | Chạy test có hiển thị trình duyệt |
@@ -166,6 +185,7 @@ npx playwright test tests/e2e/TC-ASAP-101.spec.ts -g "01" --debug
 | `npm run test:debug` | 2 | Chạy test ở chế độ debug |
 | `npm run report` | 2 | Mở HTML report + xem lại video Full-HD 1080p |
 | `npm run clean` | 2 | Xóa sạch video & báo cáo cũ |
+| `npm run server` | 2 | Chạy demo/mockup server local |
 
 ---
 
@@ -173,12 +193,12 @@ npx playwright test tests/e2e/TC-ASAP-101.spec.ts -g "01" --debug
 
 ### OpenSpecs + Reverse-Grounding — tri thức sống tự học
 
-Thay vì nạp toàn bộ tài liệu nghiệp vụ vào AI mỗi lần, starter kit nén nghiệp vụ thành **OpenSpecs** (YAML) và tự bồi đắp từ recording thật:
+Thay vì nạp 34 file Confluence (~143 KB) vào AI, dự án nén nghiệp vụ thành **OpenSpecs** (YAML) và tự bồi đắp từ recording thật:
 
 ```
-   Ticket ──────► fetch-ticket ──► docs/tickets/<KEY>.md (+ ảnh/diagram)
+   Jira Ticket ──► fetch-ticket ──► docs/tickets/<KEY>.md (+ ảnh/diagram)
                                           │
-                 OpenSpecs (docs/specs/)  │   ◄── tài liệu nghiệp vụ nén thành YAML
+                 OpenSpecs (docs/specs/)  │   ◄── Confluence nén ~86% token
                  index • process • roles • fields
                  codebase/ ui_components • state_machine
                                           │
@@ -195,7 +215,7 @@ Thay vì nạp toàn bộ tài liệu nghiệp vụ vào AI mỗi lần, starter
 ```
 
 - **Forward:** OpenSpecs → sinh test (grounding).
-- **Reverse-Grounding:** selector Tester vừa thao tác → merge ngược vào `docs/specs/codebase/live_grounded_components.yaml` → **ticket sau tái dùng ngay** selector đã kiểm chứng (ưu tiên cao hơn spec tĩnh).
+- **Reverse-Grounding:** selector Tester vừa thao tác → merge ngược vào OpenSpecs → **ticket sau tái dùng ngay** selector đã kiểm chứng.
 
 > 📐 Vì sao nén codebase thành YAML lại **nhanh, nhẹ & tiết kiệm 95–98% token**? Xem tài liệu kiến trúc chi tiết: **[docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md](./docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md)** (🇬🇧 English: [docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md](./docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md)).
 
@@ -204,38 +224,11 @@ Thay vì nạp toàn bộ tài liệu nghiệp vụ vào AI mỗi lần, starter
 Việc "đọc/trích xuất" dùng model rẻ, việc "suy luận/thiết kế test" mới dùng model mạnh:
 
 ```
-[1/4] Ingest ticket    → 0 token (scrape DOM)
+[1/4] Ingest Jira      → 0 token (scrape DOM)
 [2/4] Summarize story  → claude-sonnet-5   (đọc ticket/ảnh/comment → summary.json)
 [3/4] Analyze + New-test → claude-opus-4.8 (giải conflict + sinh spec, đọc ~30k token)
 [4/4] Verify test      → 0 token (Playwright local)
   └─ nếu FAIL: self-heal → claude-sonnet-5
-```
-
-Hạ tầng model khi ticket đơn giản: `npm run auto-test <KEY> -- --sonnet` (hoặc `--model claude-sonnet-5`).
-
-### Tạo Jira Test Sub-task không tốn token — `npm run create-subtask`
-
-Prompt `/create-test-sub-task` (mode `agent`) bắt AI click từng bước trên trình
-duyệt để tạo sub-task ⇒ tốn token. Script `scripts/create-subtask.js` làm y hệt
-nhưng **0 token**: tận dụng đúng session/profile SSO đã có (`.auth/jira-profile`)
-rồi gọi thẳng Jira REST API (`POST /rest/api/2/issue`) ngay trong page context
-(dùng chung cookie đăng nhập).
-
-```bash
-# Tạo sub-task "Test in DEV ASAP-5568" (assign to me) cho story ASAP-5568
-npm run create-subtask -- ASAP-5568
-
-# Chạy ẩn (khi session SSO đã hợp lệ, hợp cho CI)
-npm run create-subtask -- ASAP-5568 --headless
-
-# Ghi đè Summary mặc định (chỉ áp dụng khi có ĐÚNG 1 ticket)
-npm run create-subtask -- ASAP-5568 --summary "Test in DEV ASAP-5569"
-
-# 🆕 Multi-ticket — cách nhau bằng dấu cách (đăng nhập SSO 1 lần, chạy song song)
-npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103
-
-# Gộp vào pipeline auto-test (tạo sub-task ngay sau khi fetch ticket)
-npm run auto-test ASAP-5568 -- --create-subtask
 ```
 
 📖 Chi tiết đầy đủ: **[docs/ADVANCED-GUIDE.md](./docs/ADVANCED-GUIDE.md)**.
@@ -247,20 +240,23 @@ npm run auto-test ASAP-5568 -- --create-subtask
 ```
 QA-Playwright-ASAP/
 ├── .github/
-│   └── prompts/            # Prompt logic: analyze-story, new-test, summarize-story, fix-failed-test, ground-page
+│   ├── prompts/            # Prompt logic: analyze-story, new-test, summarize-story, fix-failed-test, ground-page
+│   └── skills/             # 14 Axon Ivy Skills (Tier-1) cho Copilot
 ├── docs/
-│   ├── specs/              # OpenSpecs nghiệp vụ: index/process/roles/fields.yaml (template)
-│   │   └── codebase/       # Bóc tách từ mã nguồn: ui_components, state_machine, live_grounded_components
-│   ├── tickets/            # Ticket đã bóc tách (<KEY>.md + ảnh/diagram) — sinh khi chạy
+│   ├── specs/              # OpenSpecs nghiệp vụ: index/process/roles/fields.yaml
+│   │   └── codebase/       # Bóc tách từ mã Ivy: ui_components, state_machine, live_grounded_components
+│   ├── confluence/         # 34 file tài liệu gốc (nguồn nén ra OpenSpecs)
+│   ├── tickets/            # Jira ticket đã bóc tách (<KEY>.md + ảnh/diagram)
 │   ├── en/                 # 🌐 Tài liệu tiếng Anh (README, ADVANCED-GUIDE, ARCHITECTURE)
-│   └── ADVANCED-GUIDE.md   # Tài liệu chi tiết các cơ chế nâng cao
+│   ├── ADVANCED-GUIDE.md   # Tài liệu chi tiết các cơ chế nâng cao
+│   └── IVY-SKILLS-MANIFEST.md
 ├── scripts/                # auto-test, fetch-jira, record-ticket, sync-specs, generate-codebase-specs...
 ├── tests/
 │   ├── e2e/                # Playwright spec (TC-<KEY>.spec.ts)
 │   ├── pages/              # Page Object Model
-│   ├── testcases/          # Testcase mô tả (TC-<KEY>.md) — có sẵn _TEMPLATE.md
+│   ├── testcases/          # Testcase mô tả (TC-<KEY>.md)
 │   └── recordings/         # File codegen ghi hình (<KEY>.recording.ts)
-├── .env.example            # Mẫu cấu hình môi trường (BASE_URL, tài khoản)
+├── .env                    # Cấu hình môi trường (BASE_URL, tài khoản)
 ├── playwright.config.ts
 └── setup-tester.bat / .sh  # Cài đặt 1-click
 ```
@@ -272,12 +268,13 @@ QA-Playwright-ASAP/
 Các cơ chế nâng cao được tách sang **[docs/ADVANCED-GUIDE.md](./docs/ADVANCED-GUIDE.md)** để README gọn gàng:
 
 1. Spec-Driven Testing — bộ OpenSpecs nghiệp vụ
-2. Bóc tách Ticket (Bookmarklet + Playwright automation + tải ảnh/diagram)
+2. Bóc tách Jira Ticket (Bookmarklet + Playwright automation + tải ảnh/diagram)
 3. Grounding & Reverse-Grounding chi tiết
 4. Kiến trúc phân tầng model & chạy từng bước qua Copilot Chat
 5. Bộ bóc tách OpenSpecs Codebase
-6. Quy trình xử lý Blocker & Open Questions (2 giai đoạn)
-7. Nhân bản Template sang dự án khác
+6. Bộ 14 Axon Ivy Skills Tier-1
+7. Quy trình xử lý Blocker & Open Questions (2 giai đoạn)
+8. Nhân bản Template sang dự án Ivy khác (vd: ASAP)
 
 ### 🗂️ Danh Mục Tài Liệu
 
@@ -285,11 +282,9 @@ Các cơ chế nâng cao được tách sang **[docs/ADVANCED-GUIDE.md](./docs/A
 | --- | :-: | --- |
 | [`docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./docs/CODEBASE_YAML_SPECS_ARCHITECTURE.md) | 🇻🇳 VI | Kiến trúc OpenSpecs YAML — vì sao nhanh, nhẹ & tiết kiệm token (tổng quan kiến trúc kỹ thuật) |
 | [`docs/ADVANCED-GUIDE.md`](./docs/ADVANCED-GUIDE.md) | 🇻🇳 VI | Hướng dẫn cơ chế nâng cao end-to-end |
-| [`docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md`](./docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md) | 🇻🇳 VI | Kế hoạch tối ưu token & quy trình 1-Click |
-| [`docs/ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md`](./docs/ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md) | 🇻🇳 VI | Phân tích gốc rễ: vì sao grounding là bắt buộc |
+| [`docs/IVY-SKILLS-MANIFEST.md`](./docs/IVY-SKILLS-MANIFEST.md) | 🇻🇳 VI | Danh mục 14 Axon Ivy Skills tích hợp cho Copilot |
 | [`docs/en/README.md`](./docs/en/README.md) | 🇬🇧 EN | Bản tiếng Anh của README (show khách hàng) |
 | [`docs/en/ADVANCED-GUIDE.md`](./docs/en/ADVANCED-GUIDE.md) | 🇬🇧 EN | Advanced operational guide (English) |
 | [`docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md) | 🇬🇧 EN | Client-ready architecture whitepaper (English) |
-| [`docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md`](./docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md) | 🇬🇧 EN | Token-optimization plan (English) |
 
 > 🌐 **Cho khách hàng quốc tế:** toàn bộ tài liệu tiếng Anh nằm trong **[docs/en/](./docs/en/)**.

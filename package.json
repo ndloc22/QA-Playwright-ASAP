@@ -15,7 +15,8 @@
     "generate-codebase-specs": "node scripts/generate-codebase-specs.js",
     "sync-specs": "node scripts/sync-specs.js",
     "auto-test": "node scripts/auto-test.js",
-    "regenerate": "node scripts/auto-test.js --regenerate"
+    "regenerate": "node scripts/auto-test.js --regenerate",
+    "clean": "node -e \"const fs=require('fs'); ['test-results','playwright-report','blob-report'].forEach(d => { try { fs.rmSync(d, {recursive:true, force:true}); console.log('Cleaned: ' + d); } catch(e){} })\""
   },
   "keywords": [
     "playwright",

@@ -14,16 +14,27 @@ const isRealServer =
   !resolvedBaseURL.includes('127.0.0.1:3001') &&
   !resolvedBaseURL.includes('localhost:3001');
 
+/*
+ * Mặc định LUÔN chạy TUẦN TỰ (single worker, fullyParallel = false) để tránh
+ * mở song song nhiều worker gây xung đột session người dùng và nghẽn server.
+ * Chỉ chạy song song khi có yêu cầu tường minh:
+ *   - Biến môi trường PARALLEL=true, hoặc
+ *   - Truyền cờ CLI --workers (ví dụ: npx playwright test --workers=4)
+ */
+const parallelRequested =
+  process.env.PARALLEL === 'true' ||
+  process.argv.some((arg) => arg === '--workers' || arg.startsWith('--workers='));
+
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30 * 1000,
   expect: {
     timeout: 5000,
   },
-  fullyParallel: true,
+  fullyParallel: parallelRequested,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: parallelRequested ? undefined : 1,
   reporter: [
     ['html', { open: 'never' }],
     ['list']
@@ -32,7 +43,7 @@ export default defineConfig({
     baseURL: process.env.BASE_URL || 'https://demo.playwright.dev/todomvc',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'on',
   },
   /* Tự động bật Mock Server khi chạy test cục bộ.
      Khi BASE_URL trỏ tới server thật thì khối webServer sẽ tự động bị bỏ đi. */

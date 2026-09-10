@@ -1,14 +1,16 @@
 ---
 name: regenerate
-description: Tham chiếu recording thật, gỡ test.fixme, đồng bộ OpenSpecs và verify spec tự động
+description: Regenerate Playwright spec grounded in real recording, unmark test.fixme, and verify
 ---
 
-# Lệnh /regenerate: Cập Nhật Spec Từ Recording Thật
+# Command: /regenerate
 
-Khi người dùng gọi lệnh này (ví dụ: `/regenerate KFWT-1161` hoặc `/regenerate SEARCH_TELECONTROL`):
-1. Trích xuất mã ticket hoặc tên function từ đối số người dùng nhập.
-2. Kích hoạt lệnh terminal:
+Update the test spec after recording, binding to real DOM selectors, automatically removing `test.fixme`, and verifying test execution.
+
+## Instructions:
+1. Extract the ticket key or function name from user input (e.g. `KFWT-1161`, `SEARCH_TELECONTROL`):
    ```bash
    npm run regenerate <KEY_OR_FUNCTION>
    ```
-3. Báo cáo kết quả kiểm thử (Pass/Fail) và nhắc Tester mở xem video nếu cần bằng lệnh `/report`.
+2. Execute the terminal command.
+3. Report test execution status (PASS / FAIL) and suggest reviewing the video report with `/report`.

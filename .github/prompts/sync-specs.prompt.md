@@ -1,22 +1,22 @@
 ---
 name: sync-specs
-description: Reverse-Grounding và sinh POM + Starter Spec từ recording (dùng cho Function hoặc Ticket)
+description: Reverse-Ground components and generate Page Object Model + Starter Spec from recording
 ---
 
-# Lệnh /sync-specs: Đồng Bộ & Sinh Page Object Model + Starter Spec
+# Command: /sync-specs
 
-Bạn là QA Automation Assistant. Mục tiêu: Bóc tách component sống từ recording, cập nhật OpenSpecs (Reverse-Grounding) và tạo Page Object Model (`tests/pages/<Name>Page.ts`) cùng Starter Spec (`tests/e2e/TC-<NAME>.spec.ts`).
+Extract live UI components from recording (Reverse-Grounding) and generate/overwrite Page Object Model and Starter Spec.
 
-## Hướng dẫn thực thi:
-1. Trích xuất tên function hoặc mã ticket từ người dùng (ví dụ: `ADMINISTRATION`, `SEARCH_TELECONTROL`, `KFWT-1161`):
-   - Mặc định sử dụng chế độ ghi đè an toàn 1-click:
+## Instructions:
+1. Extract function name or ticket key from user input (e.g. `ADMINISTRATION`, `SEARCH_TELECONTROL`, `KFWT-1161`):
+   - Use 1-click forced overwrite:
    ```bash
    npm run sync-specs:force <KEY_OR_FUNCTION>
    ```
-2. Thực thi lệnh terminal trên.
-3. Tóm tắt các file đã được tạo / cập nhật:
+2. Execute the command in the terminal.
+3. Summarize generated and updated files:
    - Page Object Model: `tests/pages/<Name>Page.ts`
-   - Spec khởi đầu: `tests/e2e/TC-<NAME>.spec.ts`
-   - Tri thức sống: `docs/specs/codebase/live_grounded_components.yaml`
-4. Hướng dẫn Tester cách chạy kiểm thử function vừa sinh:
-   > `/test-run TC-<NAME>` hoặc chạy 1 testcase lẻ: `npx playwright test tests/e2e/TC-<NAME>.spec.ts -g "01"`
+   - Starter Spec: `tests/e2e/TC-<NAME>.spec.ts`
+   - Live Grounded Components: `docs/specs/codebase/live_grounded_components.yaml`
+4. Guide the tester on how to run tests:
+   > Run: `/test-run TC-<NAME>` or single testcase: `npx playwright test tests/e2e/TC-<NAME>.spec.ts -g "01" --debug`.

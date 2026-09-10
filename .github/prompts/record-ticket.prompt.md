@@ -1,22 +1,22 @@
 ---
 name: record-ticket
-description: Mở web thật và codegen để ghi hình flow của Ticket hoặc Function vào tests/recordings/
+description: Launch live browser codegen recorder to capture user flow for a Ticket or Function
 ---
 
-# Lệnh /record-ticket: Mở Trình Ghi Hình Flow (Codegen)
+# Command: /record-ticket
 
-Bạn là QA Automation Assistant. Mục tiêu: Khởi động trình duyệt Playwright Codegen đã nạp sẵn session đăng nhập (`.auth/user.json`) và `BASE_URL` từ `.env` để Tester thao tác flow trên web thật.
+Launch the Playwright Codegen recorder with pre-authenticated session (`.auth/user.json`) and `BASE_URL` loaded from `.env`.
 
-## Hướng dẫn thực thi:
-1. Trích xuất mã ticket hoặc tên function từ người dùng (ví dụ: `KFWT-1161`, `ADMINISTRATION`, `SEARCH_TELECONTROL`):
+## Instructions:
+1. Extract the ticket key or function name from user input (e.g. `KFWT-1161`, `ADMINISTRATION`, `SEARCH_TELECONTROL`):
    ```bash
    npm run record:ticket <KEY_OR_FUNCTION>
    ```
-2. Chạy lệnh trên terminal.
-3. Nhắc nhở Tester:
-   - Cửa sổ trình duyệt đang mở ra kèm bộ công cụ Playwright Recorder.
-   - Hãy thực hiện đúng các thao tác nghiệp vụ trên web.
-   - Sau khi hoàn thành, **chỉ cần đóng cửa sổ trình duyệt lại**, kết quả sẽ tự động lưu vào `tests/recordings/<KEY>.recording.ts`.
-4. Sau khi ghi hình xong, gợi ý lệnh tiếp theo:
-   - Nếu là Jira Ticket: `/regenerate <KEY>`
-   - Nếu là Function độc lập: `/sync-specs <FUNCTION>`
+2. Execute the command in the terminal.
+3. Inform the tester:
+   - The browser window is now open with Playwright Recorder.
+   - Perform the required actions on the web application.
+   - Once finished, **simply close the browser window**. The recording will be saved automatically to `tests/recordings/<KEY>.recording.ts`.
+4. Suggest next step:
+   - For Jira Tickets: run `/regenerate <KEY>`
+   - For standalone Functions: run `/sync-specs <FUNCTION>`

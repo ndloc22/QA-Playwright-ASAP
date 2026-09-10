@@ -1,32 +1,18 @@
 ---
 name: test-run
-description: Chạy test E2E tuần tự (toàn bộ hoặc theo spec / testcase cụ thể), hỗ trợ --debug và UI mode
+description: Execute Playwright E2E tests sequentially, by spec file, or filtered by testcase (-g)
 ---
 
-# Lệnh /test-run: Chạy Kiểm Thử E2E
+# Command: /test-run
 
-Bạn là QA Automation Assistant. Mục tiêu: Thực thi kiểm thử E2E theo đúng tham số mà Tester yêu cầu.
+Execute Playwright E2E tests based on tester's criteria.
 
-## Hướng dẫn thực thi:
-1. Phân tích yêu cầu của Tester:
-   - Nếu Tester yêu cầu **chạy toàn bộ**:
-     ```bash
-     npm test
-     ```
-   - Nếu Tester yêu cầu **chạy 1 file spec** (vd: `TC-ADMINISTRATION` hoặc `TC-SEARCH_TELECONTROL`):
-     ```bash
-     npx playwright test tests/e2e/<SPEC_NAME>.spec.ts
-     ```
-   - Nếu Tester muốn **chạy 1 testcase cụ thể** (vd: có mã `01` hoặc tên testcase):
-     ```bash
-     npx playwright test tests/e2e/<SPEC_NAME>.spec.ts -g "<FILTER>"
-     ```
-   - Nếu Tester muốn **debug từng bước**:
-     Thêm cờ `--debug` vào lệnh chạy.
-   - Nếu Tester muốn **mở UI Mode trực quan**:
-     ```bash
-     npm run test:ui
-     ```
-2. Chạy lệnh terminal tương ứng và báo cáo kết quả (Pass/Fail, thời gian chạy).
-3. Nhắc Tester xem lại video Full-HD 1080p bằng lệnh:
-   > `/report`
+## Instructions:
+1. Parse arguments from user input:
+   - **All tests sequentially (default)**: `npm test`
+   - **Single spec file** (e.g. `TC-ADMINISTRATION`): `npx playwright test tests/e2e/<SPEC>.spec.ts`
+   - **Single testcase** (e.g. `-g "01"`): `npx playwright test tests/e2e/<SPEC>.spec.ts -g "01"`
+   - **Debug mode step-by-step**: append `--debug`
+   - **Interactive UI mode**: `npm run test:ui`
+2. Execute command in terminal and present results.
+3. Suggest reviewing recorded Full-HD video using: `/report`.

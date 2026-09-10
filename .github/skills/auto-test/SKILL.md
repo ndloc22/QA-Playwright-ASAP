@@ -1,18 +1,22 @@
 ---
 name: auto-test
-description: Pipeline tự động 4 bước từ Jira Ticket (fetch, summarize, analyze, generate spec, verify)
+description: 4-step automated pipeline from Jira ticket (fetch, summarize, analyze, generate spec, verify)
 ---
 
-# Lệnh /auto-test: Pipeline Tự Động Từ Jira Ticket
+# Command: /auto-test
 
-Khi người dùng gọi lệnh này (ví dụ: `/auto-test KFWT-1161` hoặc `/auto-test ASAP-101`):
-1. Trích xuất mã ticket hoặc URL Jira từ đối số người dùng nhập.
-2. Chạy lệnh terminal tương ứng trong thư mục dự án:
+Execute the automated 4-step Playwright test generation pipeline from a Jira Ticket.
+
+## Instructions:
+1. Extract the ticket key (e.g. `KFWT-1161`, `ASAP-101`, `TICKET-123`) or Jira URL from user input.
+2. Run the terminal command in the project directory:
    ```bash
    npm run auto-test <KEY>
    ```
-   (Nếu người dùng truyền thêm cờ như `--sonnet` hay `--create-subtask`, hãy chuyển tiếp cờ đó).
-3. Báo cáo kết quả:
-   - File testcase đã sinh: `tests/testcases/TC-<KEY>.md`
-   - File spec đã sinh: `tests/e2e/TC-<KEY>.spec.ts`
-4. Gợi ý bước tiếp theo: Mở web thật để ghi hình flow bằng lệnh `/record-ticket <KEY>`.
+   (Pass additional flags such as `--sonnet` or `--create-subtask` if provided by the user).
+3. Report the execution summary:
+   - Generated testcase: `tests/testcases/TC-<KEY>.md`
+   - Generated starter spec: `tests/e2e/TC-<KEY>.spec.ts`
+4. Recommend next step to the tester:
+   > 💡 Next, open the real application to record the flow:
+   > `/record-ticket <KEY>`

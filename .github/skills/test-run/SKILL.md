@@ -1,16 +1,18 @@
 ---
 name: test-run
-description: Chạy test E2E tuần tự (toàn bộ hoặc theo spec / testcase cụ thể), hỗ trợ --debug và UI mode
+description: Execute Playwright E2E tests sequentially, by spec file, or filtered by testcase (-g)
 ---
 
-# Lệnh /test-run: Chạy Kiểm Thử E2E
+# Command: /test-run
 
-Khi người dùng gọi lệnh này:
-1. Phân tích đối số:
-   - Nếu không có đối số hoặc yêu cầu chạy toàn bộ: `npm test`
-   - Nếu truyền tên spec (vd: `TC-ADMINISTRATION`): `npx playwright test tests/e2e/<SPEC>.spec.ts`
-   - Nếu truyền mã testcase (vd: `-g "01"`): `npx playwright test tests/e2e/<SPEC>.spec.ts -g "01"`
-   - Nếu yêu cầu debug: thêm `--debug`
-   - Nếu yêu cầu UI: `npm run test:ui`
-2. Thực thi lệnh terminal và thông báo kết quả.
-3. Gợi ý xem video Full-HD bằng `/report`.
+Execute Playwright E2E tests based on tester's criteria.
+
+## Instructions:
+1. Parse arguments from user input:
+   - **All tests sequentially (default)**: `npm test`
+   - **Single spec file** (e.g. `TC-ADMINISTRATION`): `npx playwright test tests/e2e/<SPEC>.spec.ts`
+   - **Single testcase** (e.g. `-g "01"`): `npx playwright test tests/e2e/<SPEC>.spec.ts -g "01"`
+   - **Debug mode step-by-step**: append `--debug`
+   - **Interactive UI mode**: `npm run test:ui`
+2. Execute command in terminal and present results.
+3. Suggest reviewing recorded Full-HD video using: `/report`.

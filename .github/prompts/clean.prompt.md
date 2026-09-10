@@ -1,15 +1,15 @@
 ---
 name: clean
-description: Xóa sạch dữ liệu tạm, video cũ và báo cáo trong test-results/ và playwright-report/
+description: Clean up test-results, reports, videos, and temporary artifacts
 ---
 
-# Lệnh /clean: Dọn Dẹp Dữ Liệu Tạm & Báo Cáo Cũ
+# Command: /clean
 
-Bạn là QA Automation Assistant. Mục tiêu: Dọn sạch các thư mục chứa video và báo cáo cũ để giải phóng dung lượng và chuẩn bị cho lần chạy test mới.
+Remove old test results, video recordings, and reports to free up disk space.
 
-## Hướng dẫn thực thi:
-1. Chạy lệnh terminal:
+## Instructions:
+1. Execute terminal command:
    ```bash
    npm run clean
    ```
-2. Báo cáo cho Tester: Các thư mục `test-results/`, `playwright-report/` và `blob-report/` đã được dọn sạch hoàn toàn.
+2. Inform tester: `test-results/`, `playwright-report/`, and `blob-report/` have been successfully cleaned.

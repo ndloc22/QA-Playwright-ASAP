@@ -1,13 +1,17 @@
 ---
 name: report
-description: Mở HTML Report của Playwright để xem lại kết quả test và video Full-HD 1080p
+description: Open Playwright HTML Report with full step breakdown and Full-HD 1080p recorded video
 ---
 
-# Lệnh /report: Mở Báo Cáo HTML & Video Kiểm Thử
+# Command: /report
 
-Khi người dùng gọi lệnh này:
-1. Kích hoạt lệnh terminal:
+Launch the Playwright HTML test report in the browser.
+
+## Instructions:
+1. Execute terminal command:
    ```bash
    npm run report
    ```
-2. Thông báo cho Tester: Báo cáo HTML đang mở trên trình duyệt, có thể xem chi tiết từng bước và video quay màn hình Full-HD (1920x1080) với nhịp 400ms/bước.
+2. Inform tester:
+   - The HTML report is now open in default browser.
+   - Tester can inspect test steps, timings, assertions, and download/watch the Full-HD (1920x1080) execution video.

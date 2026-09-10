@@ -13,8 +13,8 @@ Dự án phục vụ **2 nhóm người dùng** với mục đích khác nhau. H
 
 | Nhóm | Bạn là ai? | Bạn muốn làm gì? | Đi tới |
 | :-: | --- | --- | --- |
-| **1** | Làm việc với **Jira Ticket** | Sinh testcase + spec **tự động từ ticket** rồi kiểm chứng trên web thật (`auto-test` → `record:ticket` → `regenerate`) | [→ Nhóm 1: Auto-Test từ Jira](#-nhóm-1--người-làm-việc-với-jira-ticket) |
-| **2** | Tạo & kiểm thử **function/module** | Tự **tạo mới một function** độc lập (vd `ADMINISTRATION`, `SEARCH_TELECONTROL`): ghi hình flow → sinh POM + spec → chạy & debug | [→ Nhóm 2: Tạo & chạy function](#-nhóm-2--người-tạo--kiểm-thử-functionmodule) |
+| **1** | Làm việc với **Jira Ticket** | Sinh testcase + spec **tự động từ ticket** rồi kiểm chứng trên web thật (`auto-test` → `record:ticket` → `regenerate`) | [→ Nhóm 1: Auto-Test từ Jira](#nhom-1) |
+| **2** | Tạo & kiểm thử **function/module** | Tự **tạo mới một function** độc lập (vd `ADMINISTRATION`, `SEARCH_TELECONTROL`): ghi hình flow → sinh POM + spec → chạy & debug | [→ Nhóm 2: Tạo & chạy function](#nhom-2) |
 
 > ✅ **Cả 2 nhóm** đều cần làm [Cài Đặt](#-cài-đặt) + [Thiết Lập Môi Trường](#-thiết-lập-môi-trường) một lần duy nhất trước khi bắt đầu.
 
@@ -55,7 +55,7 @@ TEST_PASSWORD=your_password
 
 # 👥 Hướng Dẫn Sử Dụng Theo Nhóm Người Dùng
 
-## 🎫 NHÓM 1 — Người làm việc với Jira Ticket
+## <a id="nhom-1"></a>🎫 NHÓM 1 — Người làm việc với Jira Ticket
 
 > **Mục tiêu:** Từ **1 mã Jira** → sinh ra testcase + Playwright spec hoàn chỉnh, bám selector DOM thật.
 >
@@ -94,11 +94,11 @@ npm run regenerate KFWT-1161
 | `npm run sync-specs:force <KEY>` | Alias 1-click tương đương lệnh trên |
 | `npm run generate-codebase-specs` | Bóc tách OpenSpecs từ mã nguồn Axon Ivy |
 
-> ✅ Sau bước 3, spec đã bám selector thật — **chuyển sang phần [Nhóm 2](#-nhóm-2--người-tạo--kiểm-thử-functionmodule) để chạy & xem kết quả test.**
+> ✅ Sau bước 3, spec đã bám selector thật — **chuyển sang phần [Nhóm 2](#nhom-2) để chạy & xem kết quả test.**
 
 ---
 
-## ▶️ NHÓM 2 — Người tạo & kiểm thử function/module
+## <a id="nhom-2"></a>▶️ NHÓM 2 — Người tạo & kiểm thử function/module
 
 > **Mục tiêu:** Tự **tạo mới một function/module độc lập** (vd `ADMINISTRATION`, `SEARCH_TELECONTROL`) — ghi hình flow trên web thật → sinh **Page Object Model + Starter Spec** → chạy & debug function đó. **Không cần Jira ticket.**
 >

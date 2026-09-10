@@ -1,6 +1,6 @@
 ---
 name: summarize-story
-description: "[Model tier: claude-sonnet-5] Đọc Jira ticket + ảnh đính kèm + Jira Comments + đối chiếu codebase OpenSpecs, cô đọng thành 1 file tóm tắt JSON tinh gọn (docs/tickets/<KEY>.summary.json) để bước phân tích chuyên sâu (mặc định claude-opus-4.8, có thể hạ xuống claude-sonnet-5 khi cần) đọc lại mà KHÔNG cần nạp lại toàn bộ raw context — tối ưu token/chi phí AI Credits cho pipeline auto-test."
+description: "Extract and condense Jira ticket, attachments, and comments into compact summary JSON to optimize token costs"
 ---
 
 # Lệnh /summarize-story: Trích Xuất & Cô Đọng Nội Dung Story (Bước 1 — Model Rẻ, Chạy Trước /analyze-story)

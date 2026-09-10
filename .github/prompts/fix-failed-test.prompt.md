@@ -1,6 +1,6 @@
 ---
 name: fix-failed-test
-description: "[Model tier: claude-sonnet-5] Chẩn đoán và khắc phục test Playwright lỗi với Guardrail chống trôi kịch bản, phân biệt \"test chưa từng xanh\" (lỗi tác giả) với \"test từng xanh nay đỏ\" (nghi bug web)"
+description: "Diagnose and repair failed Playwright tests with anti-drift guardrails, distinguishing author errors from potential app bugs"
 ---
 
 # Lệnh /fix-failed-test: Chẩn Đoán Lỗi (Baseline-Gate + Anti-Drift Guardrail)

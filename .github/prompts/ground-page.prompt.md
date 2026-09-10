@@ -1,6 +1,6 @@
 ---
 name: ground-page
-description: Tạo/cập nhật Page Object từ selector THẬT của ứng dụng (record/pick-locator/MCP), làm nền tảng chống đoán selector cho /new-test
+description: "Create or update Page Object using real application selectors (record/pick-locator/DOM snapshot) to eliminate guessing"
 ---
 
 # Lệnh /ground-page: Grounding Page Object Từ App Thật

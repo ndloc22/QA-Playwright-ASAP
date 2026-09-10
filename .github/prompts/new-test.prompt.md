@@ -1,6 +1,6 @@
 ---
 name: new-test
-description: "[Model tier: claude-opus-4.8 (default); hạ xuống claude-sonnet-5 qua AUTO_TEST_ANALYSIS_MODEL hoặc --sonnet/--model khi cần] Sinh kịch bản Playwright E2E chuẩn Testcase-First, GROUNDING vào app thật (không đoán selector), tái sử dụng Page Object và tự kiểm chứng trước khi bàn giao"
+description: "Generate testcase-first Playwright E2E spec grounded in real app DOM selectors, reusing Page Objects with self-verification"
 ---
 
 # Lệnh /new-test: Sinh Kịch Bản Playwright E2E (Grounded + Testcase-First)

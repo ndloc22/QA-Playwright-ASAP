@@ -1,6 +1,6 @@
 ---
 name: analyze-story
-description: "[Model tier: claude-opus-4.8 (default); hạ xuống claude-sonnet-5 qua AUTO_TEST_ANALYSIS_MODEL hoặc --sonnet/--model khi cần] Phân tích chuyên sâu Jira Story TRƯỚC khi sinh test — đọc file tóm tắt docs/tickets/<KEY>.summary.json (đã được /summarize-story cô đọng) rồi chạy Conflict Detection Checklist đối chiếu Description vs AC vs Codebase Specs, chặn Blocker trước khi /new-test chạy"
+description: "Deep analysis of Jira Story before test generation — detect conflicts across Description, AC, and Codebase Specs to prevent blockers"
 ---
 
 # Lệnh /analyze-story: Phân Tích & Phát Hiện Xung Đột Story (Pre-flight trước /new-test)

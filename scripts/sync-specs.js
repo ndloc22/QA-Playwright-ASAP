@@ -62,7 +62,7 @@ const CODEBASE_SPEC_DIR = path.join(ROOT_DIR, 'docs', 'specs', 'codebase');
  * Resolve where a KEY's recording lives without any config: prefer the grouped
  * tests/recordings/functions/<KEY>.recording.ts (Nhóm 2), else fall back to the
  * flat tests/recordings/<KEY>.recording.ts (Nhóm 1). The returned `isFunction`
- * flag drives grouped output paths + backward-compatible proxy exports downstream.
+ * flag drives grouped output paths
  */
 function resolveRecording(key) {
   const functionFull = path.join(RECORDINGS_FUNCTIONS_DIR, `${key}.recording.ts`);
@@ -348,25 +348,6 @@ function cleanseEntryUrl(url) {
 const PAGES_DIR = path.join(ROOT_DIR, 'tests', 'pages');
 const PAGES_FUNCTIONS_DIR = path.join(PAGES_DIR, 'functions');
 
-/**
- * Guarantee a backward-compatible proxy at tests/pages/<Class>.ts that simply
- * re-exports the real Page Object now living in tests/pages/functions/<Class>.ts.
- * Any legacy `import { X } from '../pages/XPage'` keeps working 100% (no
- * "Cannot find module"). Idempotent: only (re)writes when the file is missing or
- * is not already the exact proxy (e.g. it still holds the old full implementation).
- */
-function ensurePagesProxy(pageClass) {
-  const proxyFull = path.join(PAGES_DIR, `${pageClass}.ts`);
-  const expected = `export * from './functions/${pageClass}';\n`;
-  let current = null;
-  if (fs.existsSync(proxyFull)) current = fs.readFileSync(proxyFull, 'utf-8');
-  if (current === null || current.trim() !== expected.trim()) {
-    fs.mkdirSync(PAGES_DIR, { recursive: true });
-    fs.writeFileSync(proxyFull, expected, 'utf-8');
-    return current === null ? 'created' : 'updated';
-  }
-  return 'unchanged';
-}
 
 /**
  * Chuẩn hoá KEY (ticket/module) -> tên class Page Object dạng PascalCase + "Page".
@@ -861,7 +842,6 @@ function generatePom(key, { force = false } = {}) {
   const existed = fs.existsSync(outFull);
   if (existed && !force) {
     // Keep the curated POM, but still make sure the proxy stays valid for Nhóm 2.
-    if (isFunction) ensurePagesProxy(pageClass);
     return { status: 'exists', outRel, pageClass, recordingRel, isFunction, locatorCount: model.locators.length };
   }
 
@@ -874,8 +854,6 @@ function generatePom(key, { force = false } = {}) {
   );
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFull, code, 'utf-8');
-  // Nhóm 2: publish the backward-compatible re-export proxy at tests/pages/<Class>.ts.
-  if (isFunction) ensurePagesProxy(pageClass);
 
   return {
     status: existed ? 'overwritten' : 'created',
@@ -998,7 +976,7 @@ function generateSpec(key, { force = false } = {}) {
   const specRel = isFunction ? `tests/e2e/functions/TC-${key}.spec.ts` : `tests/e2e/TC-${key}.spec.ts`;
   const specFull = path.join(specDir, `TC-${key}.spec.ts`);
   // Function specs live one level deeper (tests/e2e/functions/), so the POM import
-  // resolves through tests/pages/functions/<Class>.ts (the proxy also keeps
+  // resolves through tests/pages/functions/<Class>.ts
   // '../../pages/<Class>' working, but we point straight at the real file).
   const importSpecifier = isFunction ? `../../pages/functions/${pageClass}` : `../pages/${pageClass}`;
   const pomFull = isFunction

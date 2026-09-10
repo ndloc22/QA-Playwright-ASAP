@@ -14,6 +14,7 @@
     "create-subtask": "node scripts/create-subtask.js",
     "generate-codebase-specs": "node scripts/generate-codebase-specs.js",
     "sync-specs": "node scripts/sync-specs.js",
+    "sync-specs:force": "node scripts/sync-specs.js force",
     "auto-test": "node scripts/auto-test.js",
     "regenerate": "node scripts/auto-test.js --regenerate",
     "clean": "node -e \"const fs=require('fs'); ['test-results','playwright-report','blob-report'].forEach(d => { try { fs.rmSync(d, {recursive:true, force:true}); console.log('Cleaned: ' + d); } catch(e){} })\""

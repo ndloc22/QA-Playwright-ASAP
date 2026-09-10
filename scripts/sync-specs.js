@@ -1137,10 +1137,13 @@ function main() {
   const argv = process.argv.slice(2);
   const all = argv.includes('--all');
   const noPom = argv.includes('--no-pom');
-  const forcePom = argv.includes('--force-pom');
+  // `--force-pom` OR plain `force` positional keyword both activate force mode.
+  const forceKeyword = argv.some((a) => !a.startsWith('--') && a.toLowerCase() === 'force');
+  const forcePom = argv.includes('--force-pom') || forceKeyword;
   const noSpec = argv.includes('--no-spec');
-  const forceSpec = argv.includes('--force-spec');
-  const positional = argv.find((a) => !a.startsWith('--'));
+  const forceSpec = argv.includes('--force-spec') || forceKeyword;
+  // Ticket KEY: first positional that is NOT a known keyword ('force', '--all', etc.)
+  const positional = argv.find((a) => !a.startsWith('--') && a.toLowerCase() !== 'force');
 
   console.log('======================================================');
   console.log(' 🔁 Reverse-Grounding + POM packaging');
@@ -1156,9 +1159,11 @@ function main() {
   } else {
     const key = parseTicketKey(positional);
     if (!key) {
-      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [--no-pom] [--force-pom] [--no-spec] [--force-spec]\x1b[0m');
-      console.log('          npm run sync-specs -- --all [--no-pom] [--force-pom] [--no-spec] [--force-spec]');
-      console.log('   Example: npm run sync-specs ADMINISTRATION\n');
+      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [force] [--no-pom] [--force-pom] [--no-spec] [--force-spec]\x1b[0m');
+      console.log('          npm run sync-specs -- --all [force] [--force-pom] [--force-spec]');
+      console.log('   Example: npm run sync-specs ADMINISTRATION          # giữ nguyên file hiện có');
+      console.log('            npm run sync-specs ADMINISTRATION force     # ghi đè cả POM lẫn spec');
+      console.log('            npm run sync-specs:force ADMINISTRATION     # alias 1-click cho force\n');
       process.exit(1);
     }
     keys = [key];

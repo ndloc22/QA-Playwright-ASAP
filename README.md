@@ -47,18 +47,25 @@ npm run regenerate ASAP-101
 | `npm run auto-test <KEY>` | Pipeline 4 bước: fetch ticket → summarize → analyze + generate → verify (thêm `-- --create-subtask` để tạo luôn Jira Test Sub-task 0 token) |
 | `npm run regenerate <KEY>` | Regenerate spec từ recording (bỏ qua fetch/summarize), gỡ `test.fixme` |
 | `npm run record:ticket <KEY>` | Mở web thật + codegen, ghi lại flow → `tests/recordings/<KEY>.recording.ts` |
-| `npm run sync-specs <KEY>` | *(Tiện ích phụ)* Merge thủ công selector từ recording vào OpenSpecs (đã tự động chạy ngầm ở bước regenerate) |
+| `npm run sync-specs <KEY>` | *(Tiện ích phụ)* Merge selector từ recording vào OpenSpecs (không ghi đè file đã có) |
+| `npm run sync-specs <KEY> force` | **Ghi đè** cả POM lẫn spec ngay — không cần nhớ cú pháp `--` |
+| `npm run sync-specs:force <KEY>` | Alias 1-click tương đương lệnh trên |
 | `npm run fetch-ticket <KEY>` | Bóc tách ticket (text + ảnh + diagram) vào `docs/tickets/` |
 | `npm run create-subtask <KEY> [KEY2 ...]` | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) bằng Playwright thuần qua REST API — hỗ trợ **multi-ticket** (chạy song song, 1 lần đăng nhập SSO) — thay cho prompt AI `/create-test-sub-task` |
-| `npm test` | Chạy toàn bộ test (headless) |
+| `npm test` | Chạy toàn bộ test **tuần tự** (1 worker — tránh xung đột session server) |
+| `npm test -- --workers=4` | Chạy song song (chỉ dùng khi test trên mock server cục bộ) |
 | `npm run test:headed` | Chạy test có hiển thị trình duyệt |
 | `npm run test:ui` | Mở Playwright UI Mode (tua thời gian, debug trực quan) |
 | `npm run test:debug` | Chạy test ở chế độ debug |
-| `npm run report` | Mở HTML report của lần chạy gần nhất |
+| `npm run report` | Mở HTML report + **xem lại video Full-HD 1080p** |
+| `npm run clean` | Xóa sạch video & báo cáo cũ (`test-results/`, `playwright-report/`) |
 | `npm run generate-codebase-specs` | Bóc tách OpenSpecs từ mã nguồn ứng dụng (nếu có) |
 
-> Chạy 1 file cụ thể: `npx playwright test tests/e2e/TC-ASAP-101.spec.ts`.
-> Trong VSCode: bấm **`F5`** hoặc mở tab 🧪 **Testing** → nút ▶️ Play.
+> 💡 **Video tự động quay Full-HD (1920×1080)** mặc định cho mọi lần chạy test (kể cả khi PASS). Nhịp thao tác **400 ms/bước** giúp tester xem lại rõ ràng. Muốn chậm hơn: `set SLOWMO=800` — muốn nhanh tối đa: `set SLOWMO=0`.
+>
+> 🎯 Chạy 1 test case: `npx playwright test tests/e2e/TC-SEARCH_TELECONTROL.spec.ts -g "01"` (filter theo mã).
+> 🐛 Debug 1 test case: `npx playwright test tests/e2e/TC-SEARCH_TELECONTROL.spec.ts -g "01" --debug`.
+> 🖱️ Trong VSCode: bấm **`F5`** hoặc mở tab 🧪 **Testing** → nút ▶️ Play (hoặc 🐞 Debug từng test).
 
 ---
 

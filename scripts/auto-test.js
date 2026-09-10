@@ -349,8 +349,17 @@ const REGENERATE_ONLY = rawArgs.includes('--regenerate');
  */
 const CREATE_SUBTASK = rawArgs.includes('--create-subtask');
 
-const RECORDING_REL_PATH = `tests/recordings/${key}.recording.ts`;
-const RECORDING_FULL_PATH = path.join(ROOT_DIR, 'tests', 'recordings', `${key}.recording.ts`);
+// Nhóm 2 (Function) artifacts live under tests/recordings/functions/ &
+// tests/e2e/functions/. Auto-detect that grouping with zero config: prefer the
+// functions/ recording when present, else fall back to the flat Nhóm 1 layout.
+const RECORDING_FUNCTION_FULL_PATH = path.join(ROOT_DIR, 'tests', 'recordings', 'functions', `${key}.recording.ts`);
+const RECORDING_IS_FUNCTION = fs.existsSync(RECORDING_FUNCTION_FULL_PATH);
+const RECORDING_REL_PATH = RECORDING_IS_FUNCTION
+  ? `tests/recordings/functions/${key}.recording.ts`
+  : `tests/recordings/${key}.recording.ts`;
+const RECORDING_FULL_PATH = RECORDING_IS_FUNCTION
+  ? RECORDING_FUNCTION_FULL_PATH
+  : path.join(ROOT_DIR, 'tests', 'recordings', `${key}.recording.ts`);
 
 printHeader(`🚀 STARTING ${REGENERATE_ONLY ? 'REGENERATE (Step 3+4 only)' : 'ALL-IN-ONE AUTOMATION'} PIPELINE FOR \x1b[36m${key}\x1b[0m`);
 
@@ -577,8 +586,14 @@ function reverseGroundFromRecording() {
 function generateTest(summaryRelPath) {
   console.log(`\n\x1b[1m[3/4] 🤖 Calling GitHub Copilot to analyze story & generate test spec (100% English)...\x1b[0m`);
 
-  const relSpecPath = `tests/e2e/TC-${key}.spec.ts`;
-  const fullSpecPath = path.join(ROOT_DIR, 'tests', 'e2e', `TC-${key}.spec.ts`);
+  // Group the spec with its recording: a Nhóm 2 function spec lives under
+  // tests/e2e/functions/, otherwise the flat Nhóm 1 layout is used.
+  const functionSpecFull = path.join(ROOT_DIR, 'tests', 'e2e', 'functions', `TC-${key}.spec.ts`);
+  const specIsFunction = RECORDING_IS_FUNCTION || fs.existsSync(functionSpecFull);
+  const relSpecPath = specIsFunction ? `tests/e2e/functions/TC-${key}.spec.ts` : `tests/e2e/TC-${key}.spec.ts`;
+  const fullSpecPath = specIsFunction
+    ? functionSpecFull
+    : path.join(ROOT_DIR, 'tests', 'e2e', `TC-${key}.spec.ts`);
 
   const recording = loadRecordingGroundingTruth();
   const groundingBlock = recording

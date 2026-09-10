@@ -36,8 +36,15 @@ const AUTH_STORAGE_STATE = path.join(ROOT_DIR, '.auth', 'user.json');
 
 function parseTicketKey(arg) {
   if (!arg) return null;
-  const cleaned = String(arg).replace(/^https?:\/\/[^\/]+\/browse\//i, '').replace(/[\/\\]+$/, '').trim();
-  const match = cleaned.match(/([A-Za-z0-9_-]+)/);
+  let value = String(arg).trim();
+  if (!value) return null;
+  // Strip URL query/hash and trailing slashes, then keep only the last path
+  // segment (e.g. https://jira/browse/KFWT-1161 -> KFWT-1161).
+  value = value.split(/[?#]/)[0].replace(/\/+$/, '');
+  const segment = value.split('/').pop();
+  // Accept classic ticket keys (KFWT-1161) as well as alphanumeric module
+  // names / custom keys (ADMINISTRATION, ASAP-NAVIGATION, ...).
+  const match = segment.match(/([A-Za-z0-9_-]+)/);
   return match ? match[1].toUpperCase() : null;
 }
 
@@ -76,23 +83,34 @@ function safeSpawnSync(command, args, options = {}) {
 }
 
 const argv = process.argv.slice(2);
+// Nhóm 2 (Function/Module) mode: `npm run record:function <NAME>` (which passes
+// --function) OR being invoked via the record:function lifecycle event. In this
+// mode the recording is grouped under tests/recordings/functions/ so it never
+// collides with Nhóm 1 (Jira Ticket) recordings, and every downstream tool
+// (sync-specs.js, auto-test.js, Playwright) auto-detects that grouping.
+const FUNCTION_MODE =
+  argv.includes('--function') || process.env.npm_lifecycle_event === 'record:function';
+const MODE_LABEL = FUNCTION_MODE ? 'FUNCTION' : 'TICKET';
+const RECORD_CMD = FUNCTION_MODE ? 'record:function' : 'record:ticket';
+const TARGET_RECORDINGS_DIR = FUNCTION_MODE ? path.join(RECORDINGS_DIR, 'functions') : RECORDINGS_DIR;
 const urlFlagIndex = argv.indexOf('--url');
 const viewportFlagIndex = argv.indexOf('--viewport');
-// First positional argument that looks like a ticket key and is not the value
-// of `--url` or `--viewport`.
+// First positional argument that is not a flag and not the value of `--url`
+// or `--viewport`.
 const target = argv.find(
   (arg, idx) =>
     !arg.startsWith('--') &&
-    /[A-Z0-9]+-\d+/i.test(arg) &&
     (urlFlagIndex === -1 || idx !== urlFlagIndex + 1) &&
     (viewportFlagIndex === -1 || idx !== viewportFlagIndex + 1),
 );
 const key = parseTicketKey(target);
 
 if (!key) {
-  console.log('\n\x1b[33m⚡ Usage: npm run record:ticket <TICKET_KEY> [-- --url <path>]\x1b[0m');
-  console.log('   Example: npm run record:ticket KFWT-1161');
-  console.log('            npm run record:ticket KFWT-1161 -- --url /desk/primaryCommissioning\n');
+  console.log('\n\x1b[33m⚡ Usage:\x1b[0m');
+  console.log('   \x1b[36mNhóm 1 (Jira Ticket):\x1b[0m  npm run record:ticket <TICKET_KEY> [-- --url <path>]');
+  console.log('      Example: npm run record:ticket KFWT-1161');
+  console.log('   \x1b[36mNhóm 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
+  console.log('      Example: npm run record:function SEARCH_TELECONTROL\n');
   process.exit(1);
 }
 
@@ -118,12 +136,14 @@ if (viewportFlagIndex !== -1 && argv[viewportFlagIndex + 1]) {
 // Playwright expects `--viewport-size=<width,height>` with no spaces.
 viewportSize = viewportSize.replace(/\s+/g, '');
 
-if (!fs.existsSync(RECORDINGS_DIR)) {
-  fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+if (!fs.existsSync(TARGET_RECORDINGS_DIR)) {
+  fs.mkdirSync(TARGET_RECORDINGS_DIR, { recursive: true });
 }
 
-const relRecordingPath = `tests/recordings/${key}.recording.ts`;
-const fullRecordingPath = path.join(RECORDINGS_DIR, `${key}.recording.ts`);
+const relRecordingPath = FUNCTION_MODE
+  ? `tests/recordings/functions/${key}.recording.ts`
+  : `tests/recordings/${key}.recording.ts`;
+const fullRecordingPath = path.join(TARGET_RECORDINGS_DIR, `${key}.recording.ts`);
 
 const hasAuthStorage = fs.existsSync(AUTH_STORAGE_STATE);
 if (!hasAuthStorage) {
@@ -132,7 +152,7 @@ if (!hasAuthStorage) {
 }
 
 console.log(`\n======================================================`);
-console.log(`🎥 RECORDING GROUNDING TRUTH FOR \x1b[36m${key}\x1b[0m`);
+console.log(`🎥 RECORDING ${MODE_LABEL} GROUNDING TRUTH FOR \x1b[36m${key}\x1b[0m`);
 console.log(`======================================================\n`);
 console.log(`🌐 BASE_URL:        ${startUrl}`);
 console.log(`🔐 Auth session:    ${hasAuthStorage ? '.auth/user.json (preloaded)' : '(none -- will start logged out)'}`);
@@ -166,7 +186,7 @@ if (result.error) {
 
 if (!fs.existsSync(fullRecordingPath)) {
   console.warn(`\n\x1b[33m⚠️  Recorder closed but ${relRecordingPath} was not created (no actions recorded?).\x1b[0m`);
-  console.warn(`   -> Run "npm run record:ticket ${key}" again and perform at least one action before closing.\n`);
+  console.warn(`   -> Run "npm run ${RECORD_CMD} ${key}" again and perform at least one action before closing.\n`);
   process.exit(1);
 }
 
@@ -183,9 +203,15 @@ const INTERACTION_RE =
 if (!INTERACTION_RE.test(recordedSource)) {
   console.warn(`\n\x1b[33m⚠️  This recording has no recorded interactions (only the initial navigation).\x1b[0m`);
   console.warn(`   -> regenerate/auto-test will NOT treat it as Grounding Truth and will NOT remove test.fixme() guards.`);
-  console.warn(`   -> Re-run "npm run record:ticket ${key}" and click/fill at least one element before closing the recorder.\n`);
+  console.warn(`   -> Re-run "npm run ${RECORD_CMD} ${key}" and click/fill at least one element before closing the recorder.\n`);
 }
 
-console.log(`\n➡️  Next step -- regenerate the Page Object + Test Spec grounded in this recording:`);
-console.log(`   npm run regenerate ${key}`);
-console.log(`   (or force it as mandatory grounding: npm run auto-test ${key} -- --ground)\n`);
+if (FUNCTION_MODE) {
+  console.log(`\n➡️  Next step -- package the Page Object + starter spec into the functions/ group:`);
+  console.log(`   npm run sync-specs ${key}`);
+  console.log(`   Then run it: npx playwright test tests/e2e/functions/TC-${key}.spec.ts\n`);
+} else {
+  console.log(`\n➡️  Next step -- regenerate the Page Object + Test Spec grounded in this recording:`);
+  console.log(`   npm run regenerate ${key}`);
+  console.log(`   (or force it as mandatory grounding: npm run auto-test ${key} -- --ground)\n`);
+}

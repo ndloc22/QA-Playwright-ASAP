@@ -48,7 +48,8 @@ npm run regenerate ASAP-101
 | --- | --- |
 | `npm run auto-test <KEY>` | 4-step pipeline: fetch ticket → summarize → analyze + generate → verify (add `-- --create-subtask` to also create a Jira Test Sub-task at 0 tokens) |
 | `npm run regenerate <KEY>` | Regenerate the spec from a recording (skips fetch/summarize), removes `test.fixme` |
-| `npm run record:ticket <KEY>` | Open the real app + codegen, record the flow → `tests/recordings/<KEY>.recording.ts` |
+| `npm run record:ticket <KEY>` | Open the real app + codegen, record a **Jira Ticket** flow → `tests/recordings/<KEY>.recording.ts` |
+| `npm run record:function <FUNCTION>` | Open the real app + codegen, record a **Function** flow → `tests/recordings/functions/<FUNCTION>.recording.ts` (POM/spec grouped under `tests/pages/functions/` & `tests/e2e/functions/`) |
 | `npm run sync-specs <KEY>` | *(Utility)* Manually merge selectors from a recording into OpenSpecs (runs automatically during regenerate) |
 | `npm run fetch-ticket <KEY>` | Extract a ticket (text + images + diagrams) into `docs/tickets/` |
 | `npm run create-subtask <KEY> [KEY2 ...]` | **(0 tokens)** Create a Jira Test Sub-task `Test in DEV <KEY>` (assigned to me) via pure Playwright over REST API — supports **multi-ticket** (parallel, single SSO login) — replaces the `/create-test-sub-task` AI prompt |

@@ -10,6 +10,7 @@
     "report": "playwright show-report",
     "record": "playwright codegen",
     "record:ticket": "node scripts/record-ticket.js",
+    "record:function": "node scripts/record-ticket.js --function",
     "fetch-ticket": "node scripts/fetch-jira.js",
     "create-subtask": "node scripts/create-subtask.js",
     "generate-codebase-specs": "node scripts/generate-codebase-specs.js",

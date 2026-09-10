@@ -14,7 +14,7 @@ Dự án phục vụ **2 nhóm người dùng** với mục đích khác nhau. H
 | Nhóm | Bạn là ai? | Bạn muốn làm gì? | Đi tới |
 | :-: | --- | --- | --- |
 | **1** | Làm việc với **Jira Ticket** | Sinh testcase + spec **tự động từ ticket ASAP** rồi kiểm chứng trên web thật (`auto-test` → `record:ticket` → `regenerate`) | [→ Nhóm 1: Auto-Test từ Jira](#nhom-1) |
-| **2** | Tạo & kiểm thử **function/module** | Tự **tạo mới một function** độc lập: ghi hình flow → sinh POM + spec → chạy & debug | [→ Nhóm 2: Tạo & chạy function](#nhom-2) |
+| **2** | Tạo & kiểm thử **function/module** | Tự **tạo mới một function** độc lập: ghi hình flow (`record:function`) → sinh POM + spec → chạy & debug | [→ Nhóm 2: Tạo & chạy function](#nhom-2) |
 
 > ✅ **Cả 2 nhóm** đều cần làm [Cài Đặt](#-cài-đặt) + [Thiết Lập Môi Trường](#-thiết-lập-môi-trường) một lần duy nhất trước khi bắt đầu.
 
@@ -108,7 +108,7 @@ npm run regenerate ASAP-101
 
 ```bash
 # 1️⃣ Ghi hình flow của function trên web thật (đặt tên function, KHÔNG cần mã Jira)
-npm run record:ticket <FUNCTION_NAME>
+npm run record:function <FUNCTION_NAME>
 
 # 2️⃣ Sinh Page Object Model + Starter Spec từ recording vừa ghi
 npm run sync-specs <FUNCTION_NAME>
@@ -119,24 +119,25 @@ npm run sync-specs:force <FUNCTION_NAME>
 
 | Bước | Lệnh | Kết quả sinh ra |
 | :-: | --- | --- |
-| 1 | `npm run record:ticket <FUNCTION_NAME>` | `tests/recordings/<FUNCTION_NAME>.recording.ts` (DOM/selector thật) |
-| 2 | `npm run sync-specs <FUNCTION_NAME>` | `tests/pages/<FunctionName>Page.ts` (POM) + `tests/e2e/TC-<FUNCTION_NAME>.spec.ts` (starter spec) |
+| 1 | `npm run record:function <FUNCTION_NAME>` | `tests/recordings/functions/<FUNCTION_NAME>.recording.ts` (DOM/selector thật) |
+| 2 | `npm run sync-specs <FUNCTION_NAME>` | `tests/pages/functions/<FunctionName>Page.ts` (POM) + `tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts` (starter spec) |
 | 2* | `npm run sync-specs:force <FUNCTION_NAME>` | **Ghi đè** POM + spec đã có (mặc định KHÔNG ghi đè để an toàn) |
 
 > 💡 `<FUNCTION_NAME>` là tên module tự đặt (chữ IN HOA, vd `LOGIN`, `ORDER_CREATION`). POM được đặt tên PascalCase (vd `LoginPage.ts`).
+> 🗂️ **Gom nhóm chống xung đột:** artifact của function nằm trong thư mục con `functions/` (`tests/recordings/functions/`, `tests/pages/functions/`, `tests/e2e/functions/`, `tests/testcases/functions/`), tách biệt với file Jira Ticket (Nhóm 1). `sync-specs` tạo thêm **proxy export** tại `tests/pages/<Name>Page.ts` nên mọi import cũ vẫn chạy 100%.
 > 🔁 `sync-specs` còn **merge ngược** selector thật vào OpenSpecs (Reverse-Grounding) → function sau tái dùng ngay selector đã kiểm chứng.
 
 ### Chạy & Debug một function
 
 ```bash
 # Chạy toàn bộ spec của 1 function
-npx playwright test tests/e2e/TC-<FUNCTION_NAME>.spec.ts
+npx playwright test tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts
 
 # Chạy đúng 1 testcase cụ thể trong function (filter -g theo mã testcase)
-npx playwright test tests/e2e/TC-<FUNCTION_NAME>.spec.ts -g "01"
+npx playwright test tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts -g "01"
 
 # Debug step-by-step đúng testcase đó (dừng từng bước)
-npx playwright test tests/e2e/TC-<FUNCTION_NAME>.spec.ts -g "01" --debug
+npx playwright test tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts -g "01" --debug
 ```
 
 | Lệnh | Công dụng |
@@ -168,7 +169,8 @@ npx playwright test tests/e2e/TC-<FUNCTION_NAME>.spec.ts -g "01" --debug
 | --- | :-: | --- |
 | `npm run auto-test <KEY>` | 1 | Pipeline 4 bước: fetch Jira → summarize → analyze + generate → verify |
 | `npm run regenerate <KEY>` | 1 | Regenerate spec từ recording (bỏ qua fetch/summarize), gỡ `test.fixme` |
-| `npm run record:ticket <KEY|FUNCTION>` | 1·2 | Mở web thật + codegen, ghi flow → `tests/recordings/<KEY>.recording.ts` |
+| `npm run record:ticket <KEY>` | 1 | Mở web thật + codegen, ghi flow Jira Ticket → `tests/recordings/<KEY>.recording.ts` |
+| `npm run record:function <FUNCTION>` | 2 | Mở web thật + codegen, ghi flow Function → `tests/recordings/functions/<FUNCTION>.recording.ts` |
 | `npm run fetch-ticket <KEY>` | 1 | Bóc tách Jira ticket (text + ảnh + diagram) vào `docs/tickets/` |
 | `npm run create-subtask <KEY> [KEY2 ...]` | 1 | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) qua REST API |
 | `npm run sync-specs <KEY|FUNCTION>` | 1·2 | Merge selector (Reverse-Grounding) + sinh POM & starter spec (không ghi đè file đã có) |

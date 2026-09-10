@@ -51,7 +51,34 @@ const yaml = require('js-yaml');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const RECORDINGS_DIR = path.join(ROOT_DIR, 'tests', 'recordings');
+// Nhóm 2 (Function/Module) artifacts live in dedicated `functions/` subfolders so
+// they never collide with Nhóm 1 (Jira Ticket) files. `record:function` writes the
+// recording under tests/recordings/functions/, and this script mirrors that grouping
+// for the Page Object (tests/pages/functions/) and starter spec (tests/e2e/functions/).
+const RECORDINGS_FUNCTIONS_DIR = path.join(RECORDINGS_DIR, 'functions');
 const CODEBASE_SPEC_DIR = path.join(ROOT_DIR, 'docs', 'specs', 'codebase');
+
+/**
+ * Resolve where a KEY's recording lives without any config: prefer the grouped
+ * tests/recordings/functions/<KEY>.recording.ts (Nhóm 2), else fall back to the
+ * flat tests/recordings/<KEY>.recording.ts (Nhóm 1). The returned `isFunction`
+ * flag drives grouped output paths + backward-compatible proxy exports downstream.
+ */
+function resolveRecording(key) {
+  const functionFull = path.join(RECORDINGS_FUNCTIONS_DIR, `${key}.recording.ts`);
+  if (fs.existsSync(functionFull)) {
+    return {
+      isFunction: true,
+      recordingFull: functionFull,
+      recordingRel: `tests/recordings/functions/${key}.recording.ts`
+    };
+  }
+  return {
+    isFunction: false,
+    recordingFull: path.join(RECORDINGS_DIR, `${key}.recording.ts`),
+    recordingRel: `tests/recordings/${key}.recording.ts`
+  };
+}
 const LIVE_SPEC_PATH = path.join(CODEBASE_SPEC_DIR, 'live_grounded_components.yaml');
 const LIVE_SPEC_REL = 'docs/specs/codebase/live_grounded_components.yaml';
 
@@ -319,6 +346,27 @@ function cleanseEntryUrl(url) {
 }
 
 const PAGES_DIR = path.join(ROOT_DIR, 'tests', 'pages');
+const PAGES_FUNCTIONS_DIR = path.join(PAGES_DIR, 'functions');
+
+/**
+ * Guarantee a backward-compatible proxy at tests/pages/<Class>.ts that simply
+ * re-exports the real Page Object now living in tests/pages/functions/<Class>.ts.
+ * Any legacy `import { X } from '../pages/XPage'` keeps working 100% (no
+ * "Cannot find module"). Idempotent: only (re)writes when the file is missing or
+ * is not already the exact proxy (e.g. it still holds the old full implementation).
+ */
+function ensurePagesProxy(pageClass) {
+  const proxyFull = path.join(PAGES_DIR, `${pageClass}.ts`);
+  const expected = `export * from './functions/${pageClass}';\n`;
+  let current = null;
+  if (fs.existsSync(proxyFull)) current = fs.readFileSync(proxyFull, 'utf-8');
+  if (current === null || current.trim() !== expected.trim()) {
+    fs.mkdirSync(PAGES_DIR, { recursive: true });
+    fs.writeFileSync(proxyFull, expected, 'utf-8');
+    return current === null ? 'created' : 'updated';
+  }
+  return 'unchanged';
+}
 
 /**
  * Chuẩn hoá KEY (ticket/module) -> tên class Page Object dạng PascalCase + "Page".
@@ -798,10 +846,10 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback) {
  */
 function generatePom(key, { force = false } = {}) {
   const pageClass = toPascalCasePageName(key);
-  const outRel = `tests/pages/${pageClass}.ts`;
-  const outFull = path.join(PAGES_DIR, `${pageClass}.ts`);
-  const recordingFull = path.join(RECORDINGS_DIR, `${key}.recording.ts`);
-  const recordingRel = `tests/recordings/${key}.recording.ts`;
+  const { isFunction, recordingFull, recordingRel } = resolveRecording(key);
+  const outDir = isFunction ? PAGES_FUNCTIONS_DIR : PAGES_DIR;
+  const outRel = isFunction ? `tests/pages/functions/${pageClass}.ts` : `tests/pages/${pageClass}.ts`;
+  const outFull = path.join(outDir, `${pageClass}.ts`);
 
   if (!fs.existsSync(recordingFull)) return { status: 'missing', outRel, pageClass, recordingRel };
   const source = fs.readFileSync(recordingFull, 'utf-8');
@@ -812,7 +860,9 @@ function generatePom(key, { force = false } = {}) {
 
   const existed = fs.existsSync(outFull);
   if (existed && !force) {
-    return { status: 'exists', outRel, pageClass, recordingRel, locatorCount: model.locators.length };
+    // Keep the curated POM, but still make sure the proxy stays valid for Nhóm 2.
+    if (isFunction) ensurePagesProxy(pageClass);
+    return { status: 'exists', outRel, pageClass, recordingRel, isFunction, locatorCount: model.locators.length };
   }
 
   const { code, methodCount } = renderPomClass(
@@ -822,20 +872,24 @@ function generatePom(key, { force = false } = {}) {
     model,
     cleanseEntryUrl(extractEntryUrl(source))
   );
-  fs.mkdirSync(PAGES_DIR, { recursive: true });
+  fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFull, code, 'utf-8');
+  // Nhóm 2: publish the backward-compatible re-export proxy at tests/pages/<Class>.ts.
+  if (isFunction) ensurePagesProxy(pageClass);
 
   return {
     status: existed ? 'overwritten' : 'created',
     outRel,
     pageClass,
     recordingRel,
+    isFunction,
     locatorCount: model.locators.length,
     methodCount
   };
 }
 
 const E2E_DIR = path.join(ROOT_DIR, 'tests', 'e2e');
+const E2E_FUNCTIONS_DIR = path.join(E2E_DIR, 'functions');
 
 /**
  * Chuẩn hoá KEY -> tiêu đề đọc được cho describe block ("SEARCH_TELECONTROL" ->
@@ -854,7 +908,7 @@ function toTitle(key) {
  * Spec import Page Object đã sinh, điều hướng qua process.env.BASE_URL, gọi
  * ensureAuthenticated() rồi thực thi các action đã ghi với assertion an toàn.
  */
-function renderSpecFile(pageClass, key, recordingRel, model, baseFallback) {
+function renderSpecFile(pageClass, key, recordingRel, model, baseFallback, importSpecifier) {
   const { locators } = model;
   const pageLocators = locators.filter((l) => !l.isFrame);
   const frameLocators = locators.filter((l) => l.isFrame);
@@ -875,7 +929,7 @@ function renderSpecFile(pageClass, key, recordingRel, model, baseFallback) {
   const inst = 'pom';
   const L = [];
   L.push("import { test, expect } from '@playwright/test';");
-  L.push(`import { ${pageClass} } from '../pages/${pageClass}';`);
+  L.push(`import { ${pageClass} } from '${importSpecifier || `../pages/${pageClass}`}';`);
   L.push('');
   L.push('/**');
   L.push(` * TC-${key}: clean STARTER E2E spec.`);
@@ -939,11 +993,17 @@ function renderSpecFile(pageClass, key, recordingRel, model, baseFallback) {
  */
 function generateSpec(key, { force = false } = {}) {
   const pageClass = toPascalCasePageName(key);
-  const specRel = `tests/e2e/TC-${key}.spec.ts`;
-  const specFull = path.join(E2E_DIR, `TC-${key}.spec.ts`);
-  const recordingFull = path.join(RECORDINGS_DIR, `${key}.recording.ts`);
-  const recordingRel = `tests/recordings/${key}.recording.ts`;
-  const pomFull = path.join(PAGES_DIR, `${pageClass}.ts`);
+  const { isFunction, recordingFull, recordingRel } = resolveRecording(key);
+  const specDir = isFunction ? E2E_FUNCTIONS_DIR : E2E_DIR;
+  const specRel = isFunction ? `tests/e2e/functions/TC-${key}.spec.ts` : `tests/e2e/TC-${key}.spec.ts`;
+  const specFull = path.join(specDir, `TC-${key}.spec.ts`);
+  // Function specs live one level deeper (tests/e2e/functions/), so the POM import
+  // resolves through tests/pages/functions/<Class>.ts (the proxy also keeps
+  // '../../pages/<Class>' working, but we point straight at the real file).
+  const importSpecifier = isFunction ? `../../pages/functions/${pageClass}` : `../pages/${pageClass}`;
+  const pomFull = isFunction
+    ? path.join(PAGES_FUNCTIONS_DIR, `${pageClass}.ts`)
+    : path.join(PAGES_DIR, `${pageClass}.ts`);
 
   if (!fs.existsSync(recordingFull)) return { status: 'missing', specRel, pageClass, recordingRel };
   const source = fs.readFileSync(recordingFull, 'utf-8');
@@ -960,8 +1020,15 @@ function generateSpec(key, { force = false } = {}) {
     return { status: 'exists', specRel, pageClass, recordingRel };
   }
 
-  const code = renderSpecFile(pageClass, key, recordingRel, model, cleanseEntryUrl(extractEntryUrl(source)));
-  fs.mkdirSync(E2E_DIR, { recursive: true });
+  const code = renderSpecFile(
+    pageClass,
+    key,
+    recordingRel,
+    model,
+    cleanseEntryUrl(extractEntryUrl(source)),
+    importSpecifier
+  );
+  fs.mkdirSync(specDir, { recursive: true });
   fs.writeFileSync(specFull, code, 'utf-8');
 
   return { status: existed ? 'overwritten' : 'created', specRel, pageClass, recordingRel };
@@ -988,8 +1055,7 @@ function loadLiveSpec() {
 }
 
 function syncRecording(spec, key) {
-  const recordingFull = path.join(RECORDINGS_DIR, `${key}.recording.ts`);
-  const recordingRel = `tests/recordings/${key}.recording.ts`;
+  const { recordingFull, recordingRel } = resolveRecording(key);
 
   if (!fs.existsSync(recordingFull)) {
     return { key, status: 'missing', recordingRel };
@@ -1125,12 +1191,16 @@ function reportSpec(key, spec) {
 }
 
 function listRecordingKeys() {
-  if (!fs.existsSync(RECORDINGS_DIR)) return [];
-  return fs
-    .readdirSync(RECORDINGS_DIR)
-    .filter((f) => /\.recording\.ts$/i.test(f))
-    .map((f) => parseTicketKey(f))
-    .filter(Boolean);
+  const keys = new Set();
+  for (const dir of [RECORDINGS_DIR, RECORDINGS_FUNCTIONS_DIR]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      if (!/\.recording\.ts$/i.test(f)) continue;
+      const key = parseTicketKey(f);
+      if (key) keys.add(key);
+    }
+  }
+  return Array.from(keys);
 }
 
 function main() {

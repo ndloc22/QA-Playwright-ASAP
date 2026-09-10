@@ -288,3 +288,15 @@ Các cơ chế nâng cao được tách sang **[docs/ADVANCED-GUIDE.md](./docs/A
 | [`docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./docs/en/CODEBASE_YAML_SPECS_ARCHITECTURE.md) | 🇬🇧 EN | Client-ready architecture whitepaper (English) |
 
 > 🌐 **Cho khách hàng quốc tế:** toàn bộ tài liệu tiếng Anh nằm trong **[docs/en/](./docs/en/)**.
+
+---
+
+## 🔗 Tài Liệu Tham Khảo (References)
+
+Các dự án mã nguồn mở và tiêu chuẩn kiến trúc tham khảo:
+
+- **[OpenSpec (Fission AI)](https://github.com/Fission-AI/OpenSpec)** — Chuẩn đặc tả YAML có cấu trúc (Spec-driven AI development kernel & structured specifications) dành cho Agentic workflows.
+- **[Stagehand (Browserbase)](https://github.com/browserbase/stagehand)** — Framework web agent điều khiển trình duyệt thông minh trên nền Playwright với AI tự động phát hiện phần tử DOM.
+- **[Playwright-BDD](https://github.com/vitalets/playwright-bdd)** — Mô hình kết hợp đặc tả kịch bản kiểm thử (BDD/spec-driven) trực tiếp với Playwright test runner.
+- **[Microsoft Playwright](https://github.com/microsoft/playwright)** — Framework kiểm thử E2E cốt lõi, công cụ Codegen ghi nhận tương tác DOM thực tế và kiến trúc Page Object Model (POM).
+

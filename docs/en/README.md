@@ -242,3 +242,15 @@ Advanced mechanics live in **[ADVANCED-GUIDE.md](./ADVANCED-GUIDE.md)** to keep 
 | [`ADVANCED-GUIDE.md`](./ADVANCED-GUIDE.md) | End-to-end operational guide for QA engineers & stakeholders |
 | [`CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./CODEBASE_YAML_SPECS_ARCHITECTURE.md) | Client-ready whitepaper: why YAML codebase specs are fast, light & token-efficient |
 | [`../QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md`](../QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md) | Token-optimization plan & 1-click workflow |
+
+---
+
+## 🔗 References
+
+Open-source projects and architectural references with related paradigms:
+
+- **[OpenSpec (Fission AI)](https://github.com/Fission-AI/OpenSpec)** — Spec-driven AI development kernel & structured YAML specifications for agentic workflows.
+- **[Stagehand (Browserbase)](https://github.com/browserbase/stagehand)** — AI-driven web agent framework on top of Playwright with autonomous DOM discovery.
+- **[Playwright-BDD](https://github.com/vitalets/playwright-bdd)** — Spec-driven & testcase-first architecture combining behavior specs directly with Playwright.
+- **[Microsoft Playwright](https://github.com/microsoft/playwright)** — Core E2E testing framework, Codegen session recorder, and Page Object Model architecture.
+

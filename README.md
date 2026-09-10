@@ -1,4 +1,4 @@
-# 🧪 QA Playwright Copilot Starter Kit
+# 🧪 QA Playwright Copilot Starter Kit — ASAP
 
 ### Bộ Khởi Động Kiểm Thử E2E theo Kiến Trúc **Testcase-First** + GitHub Copilot
 
@@ -15,68 +15,27 @@
 
 ---
 
-## 🚀 Quick Start — Quy Trình 3 Bước Chuẩn QA
+## 🧭 Bạn thuộc nhóm nào? (Đọc phần này trước)
 
-Sau khi [cài đặt](#-cài-đặt) và [cấu hình `.env`](#-thiết-lập-môi-trường), mỗi ticket chỉ cần 3 lệnh:
+Dự án phục vụ **2 nhóm người dùng** với mục đích khác nhau. Hãy xác định đúng nhóm của bạn để đi thẳng vào phần hướng dẫn phù hợp:
 
-```bash
-# 1️⃣ Sinh testcase & spec từ ticket (fetch → summarize → analyze → generate → verify)
-npm run auto-test ASAP-101
+| Nhóm | Bạn là ai? | Bạn muốn làm gì? | Đi tới |
+| :-: | --- | --- | --- |
+| **1** | Làm việc với **Jira Ticket (ASAP)** | Sinh testcase + spec **tự động từ ticket** rồi kiểm chứng trên web thật | [→ Nhóm 1: Auto-Test từ Ticket](#-nhóm-1--người-làm-việc-với-jira-ticket) |
+| **2** | Chỉ **chạy test có sẵn** | Chạy các test function/module **đã viết** và xem kết quả (không cần ticket) | [→ Nhóm 2: Chạy test có sẵn](#-nhóm-2--người-chỉ-chạy-test-có-sẵn) |
 
-# 2️⃣ Mở web thật, click qua đúng flow chính rồi đóng cửa sổ lại → tự xuất recording
-npm run record:ticket ASAP-101
-
-# 3️⃣ Regenerate: tự tham chiếu recording, gỡ test.fixme, đồng bộ OpenSpecs & verify test
-npm run regenerate ASAP-101
-```
-
-| Bước | Lệnh | Kết quả |
-| :-: | --- | --- |
-| 1 | `npm run auto-test <KEY>` | `tests/testcases/TC-<KEY>.md` + `tests/e2e/TC-<KEY>.spec.ts` |
-| 2 | `npm run record:ticket <KEY>` | `tests/recordings/<KEY>.recording.ts` (DOM/selector thật) |
-| 3 | `npm run regenerate <KEY>` | Spec bám selector thật, gỡ `test.fixme`, cập nhật OpenSpecs |
-
-> 💡 Có thể dùng link ticket thay cho `<KEY>`: `npm run auto-test https://your-jira/browse/ASAP-101`.
+> ✅ **Cả 2 nhóm** đều cần làm [Cài Đặt](#-cài-đặt) + [Thiết Lập Môi Trường](#-thiết-lập-môi-trường) một lần duy nhất trước khi bắt đầu.
 
 ---
 
-## 📋 Bảng Tra Cứu Lệnh Nhanh (Cheatsheet)
-
-| Lệnh | Công dụng |
-| --- | --- |
-| `npm run auto-test <KEY>` | Pipeline 4 bước: fetch ticket → summarize → analyze + generate → verify (thêm `-- --create-subtask` để tạo luôn Jira Test Sub-task 0 token) |
-| `npm run regenerate <KEY>` | Regenerate spec từ recording (bỏ qua fetch/summarize), gỡ `test.fixme` |
-| `npm run record:ticket <KEY>` | Mở web thật + codegen, ghi lại flow → `tests/recordings/<KEY>.recording.ts` |
-| `npm run sync-specs <KEY>` | *(Tiện ích phụ)* Merge selector từ recording vào OpenSpecs (không ghi đè file đã có) |
-| `npm run sync-specs <KEY> force` | **Ghi đè** cả POM lẫn spec ngay — không cần nhớ cú pháp `--` |
-| `npm run sync-specs:force <KEY>` | Alias 1-click tương đương lệnh trên |
-| `npm run fetch-ticket <KEY>` | Bóc tách ticket (text + ảnh + diagram) vào `docs/tickets/` |
-| `npm run create-subtask <KEY> [KEY2 ...]` | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) bằng Playwright thuần qua REST API — hỗ trợ **multi-ticket** (chạy song song, 1 lần đăng nhập SSO) — thay cho prompt AI `/create-test-sub-task` |
-| `npm test` | Chạy toàn bộ test **tuần tự** (1 worker — tránh xung đột session server) |
-| `npm test -- --workers=4` | Chạy song song (chỉ dùng khi test trên mock server cục bộ) |
-| `npm run test:headed` | Chạy test có hiển thị trình duyệt |
-| `npm run test:ui` | Mở Playwright UI Mode (tua thời gian, debug trực quan) |
-| `npm run test:debug` | Chạy test ở chế độ debug |
-| `npm run report` | Mở HTML report + **xem lại video Full-HD 1080p** |
-| `npm run clean` | Xóa sạch video & báo cáo cũ (`test-results/`, `playwright-report/`) |
-| `npm run generate-codebase-specs` | Bóc tách OpenSpecs từ mã nguồn ứng dụng (nếu có) |
-
-> 💡 **Video tự động quay Full-HD (1920×1080)** mặc định cho mọi lần chạy test (kể cả khi PASS). Nhịp thao tác **400 ms/bước** giúp tester xem lại rõ ràng. Muốn chậm hơn: `set SLOWMO=800` — muốn nhanh tối đa: `set SLOWMO=0`.
->
-> 🎯 Chạy 1 test case: `npx playwright test tests/e2e/TC-SEARCH_TELECONTROL.spec.ts -g "01"` (filter theo mã).
-> 🐛 Debug 1 test case: `npx playwright test tests/e2e/TC-SEARCH_TELECONTROL.spec.ts -g "01" --debug`.
-> 🖱️ Trong VSCode: bấm **`F5`** hoặc mở tab 🧪 **Testing** → nút ▶️ Play (hoặc 🐞 Debug từng test).
-
----
-
-## 🧰 Cài Đặt
+## ⚙️ Cài Đặt
 
 ```bash
 git clone https://github.com/ndloc22/QA-Playwright-ASAP.git
 cd QA-Playwright-ASAP
 ```
 
-Rồi chạy cài đặt tự động:
+Rồi chạy cài đặt tự động (cài Node modules + Playwright browser):
 - **🪟 Windows:** nhấp đúp **`setup-tester.bat`**
 - **🍎 macOS / 🐧 Linux:** `./setup-tester.sh`
 
@@ -95,7 +54,118 @@ TEST_USERNAME=your_username
 TEST_PASSWORD=your_password
 ```
 
-> Session đăng nhập được lưu tại `.auth/user.json` để `record:ticket` vào thẳng app đã login, không phải re-login mỗi lần.
+> 🔐 Session đăng nhập được lưu tại `.auth/user.json` để `record:ticket` vào thẳng app đã login, không phải re-login mỗi lần.
+
+---
+
+# 👥 Hướng Dẫn Sử Dụng Theo Nhóm Người Dùng
+
+## 🎫 NHÓM 1 — Người làm việc với Jira Ticket
+
+> **Mục tiêu:** Từ **1 mã ticket ASAP** → sinh ra testcase + Playwright spec hoàn chỉnh, bám selector DOM thật.
+> **Yêu cầu:** đã cấu hình `.env` trỏ tới app test của team ASAP.
+
+### Quy trình 3 bước chuẩn (mỗi ticket)
+
+```bash
+# 1️⃣ Sinh testcase & spec từ ticket (fetch → summarize → analyze → generate → verify)
+npm run auto-test ASAP-101
+
+# 2️⃣ Mở web thật, click qua đúng flow chính rồi đóng cửa sổ → tự xuất recording
+npm run record:ticket ASAP-101
+
+# 3️⃣ Regenerate: tự tham chiếu recording, gỡ test.fixme, đồng bộ OpenSpecs & verify test
+npm run regenerate ASAP-101
+```
+
+| Bước | Lệnh | Kết quả sinh ra |
+| :-: | --- | --- |
+| 1 | `npm run auto-test <KEY>` | `tests/testcases/TC-<KEY>.md` + `tests/e2e/TC-<KEY>.spec.ts` (có `test.fixme`) |
+| 2 | `npm run record:ticket <KEY>` | `tests/recordings/<KEY>.recording.ts` (DOM/selector thật) |
+| 3 | `npm run regenerate <KEY>` | Spec bám selector thật, gỡ `test.fixme`, cập nhật OpenSpecs |
+
+> 💡 Có thể thay `<KEY>` bằng link Jira đầy đủ: `npm run auto-test https://your-jira/browse/ASAP-101`.
+> 💰 Ticket đơn giản → hạ tầng model cho rẻ: `npm run auto-test <KEY> -- --sonnet` (hoặc `--model claude-sonnet-5`).
+> ⚡ Tạo luôn Jira Test Sub-task 0 token ngay khi sinh test: `npm run auto-test ASAP-101 -- --create-subtask`.
+
+### Các lệnh phụ trợ cho Nhóm 1
+
+| Lệnh | Công dụng |
+| --- | --- |
+| `npm run fetch-ticket <KEY>` | Bóc tách Jira ticket (text + ảnh + diagram) vào `docs/tickets/` |
+| `npm run create-subtask <KEY> [KEY2 ...]` | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) qua REST API — hỗ trợ **multi-ticket** |
+| `npm run sync-specs <KEY>` | Merge selector từ recording vào OpenSpecs (không ghi đè file đã có) |
+| `npm run sync-specs <KEY> force` | **Ghi đè** cả POM lẫn spec ngay — không cần nhớ cú pháp `--` |
+| `npm run sync-specs:force <KEY>` | Alias 1-click tương đương lệnh trên |
+| `npm run generate-codebase-specs` | Bóc tách OpenSpecs từ mã nguồn ứng dụng (nếu có) |
+
+> ✅ Sau bước 3, spec đã bám selector thật — **chuyển sang phần [Nhóm 2](#-nhóm-2--người-chỉ-chạy-test-có-sẵn) để chạy & xem kết quả test.**
+
+---
+
+## ▶️ NHÓM 2 — Người chỉ chạy test có sẵn
+
+> **Mục tiêu:** Chạy các test function/module **đã có sẵn** trong `tests/e2e/` và xem kết quả — **không cần Jira ticket, không cần AI.**
+> **Yêu cầu:** chỉ cần đã [Cài Đặt](#-cài-đặt).
+
+### Lệnh chạy test cơ bản
+
+| Lệnh | Công dụng |
+| --- | --- |
+| `npm test` | Chạy **toàn bộ** test **tuần tự** (1 worker — tránh xung đột session server) |
+| `npm run test:headed` | Chạy test **có hiển thị trình duyệt** để quan sát trực tiếp |
+| `npm run test:ui` | Mở **Playwright UI Mode** (tua thời gian, debug trực quan) |
+| `npm run test:debug` | Chạy test ở chế độ **debug** (dừng từng bước) |
+| `npm run report` | Mở **HTML report** + xem lại **video Full-HD 1080p** |
+| `npm run clean` | Xóa sạch video & báo cáo cũ (`test-results/`, `playwright-report/`) |
+
+### Chạy 1 test / 1 module cụ thể
+
+```bash
+# Chạy 1 file spec cụ thể
+npx playwright test tests/e2e/TC-ASAP-101.spec.ts
+
+# Chạy 1 test case theo mã hoặc tên (filter -g)
+npx playwright test tests/e2e/TC-ASAP-101.spec.ts -g "01"
+
+# Debug đúng 1 test case đó
+npx playwright test tests/e2e/TC-ASAP-101.spec.ts -g "01" --debug
+```
+
+> 🖱️ **Trong VSCode:** bấm **`F5`** hoặc mở tab 🧪 **Testing** → nút ▶️ Play (hoặc 🐞 Debug từng test).
+
+### Tùy chọn nâng cao khi chạy test
+
+| Nhu cầu | Lệnh / Thiết lập |
+| --- | --- |
+| Chạy **song song** (chỉ khi test trên mock cục bộ) | `npm test -- --workers=4` |
+| Xem video **chậm hơn** để thuyết trình | `set SLOWMO=800` rồi chạy test |
+| Chạy **nhanh tối đa** (tắt giãn nhịp) | `set SLOWMO=0` rồi chạy test |
+
+> 🎥 **Video tự động quay Full-HD (1920×1080)** cho **mọi** lần chạy (kể cả khi PASS). Nhịp thao tác mặc định **400 ms/bước** để tester xem lại rõ ràng. Xem lại bằng `npm run report`.
+
+---
+
+## 📋 Bảng Tra Cứu Toàn Bộ Lệnh (Cheatsheet)
+
+| Lệnh | Nhóm | Công dụng |
+| --- | :-: | --- |
+| `npm run auto-test <KEY>` | 1 | Pipeline 4 bước: fetch ticket → summarize → analyze + generate → verify |
+| `npm run regenerate <KEY>` | 1 | Regenerate spec từ recording (bỏ qua fetch/summarize), gỡ `test.fixme` |
+| `npm run record:ticket <KEY>` | 1 | Mở web thật + codegen, ghi flow → `tests/recordings/<KEY>.recording.ts` |
+| `npm run fetch-ticket <KEY>` | 1 | Bóc tách ticket (text + ảnh + diagram) vào `docs/tickets/` |
+| `npm run create-subtask <KEY> [KEY2 ...]` | 1 | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) qua REST API |
+| `npm run sync-specs <KEY>` | 1 | Merge selector từ recording vào OpenSpecs (không ghi đè) |
+| `npm run sync-specs <KEY> force` | 1 | **Ghi đè** cả POM lẫn spec ngay |
+| `npm run sync-specs:force <KEY>` | 1 | Alias 1-click tương đương lệnh trên |
+| `npm run generate-codebase-specs` | 1 | Bóc tách OpenSpecs từ mã nguồn ứng dụng (nếu có) |
+| `npm test` | 2 | Chạy toàn bộ test **tuần tự** (1 worker) |
+| `npm test -- --workers=4` | 2 | Chạy song song (chỉ dùng trên mock server cục bộ) |
+| `npm run test:headed` | 2 | Chạy test có hiển thị trình duyệt |
+| `npm run test:ui` | 2 | Mở Playwright UI Mode |
+| `npm run test:debug` | 2 | Chạy test ở chế độ debug |
+| `npm run report` | 2 | Mở HTML report + xem lại video Full-HD 1080p |
+| `npm run clean` | 2 | Xóa sạch video & báo cáo cũ |
 
 ---
 
@@ -164,44 +234,9 @@ npm run create-subtask -- ASAP-5568 --summary "Test in DEV ASAP-5569"
 # 🆕 Multi-ticket — cách nhau bằng dấu cách (đăng nhập SSO 1 lần, chạy song song)
 npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103
 
-# 🆕 Multi-ticket — chuỗi phân cách bằng dấu phẩy
-npm run create-subtask -- "ASAP-101, ASAP-102, ASAP-103"
-
-# 🆕 Multi-ticket — đọc danh sách từ file (mỗi dòng/phẩy/khoảng trắng; '#' là comment)
-npm run create-subtask -- --file tickets.txt
-
-# 🆕 Chỉnh số luồng chạy song song trong pool (mặc định 3)
-npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103 --concurrency 5
-
 # Gộp vào pipeline auto-test (tạo sub-task ngay sau khi fetch ticket)
 npm run auto-test ASAP-5568 -- --create-subtask
 ```
-
-**Bảng cờ (flags) của `create-subtask`:**
-
-| Cờ / Biến môi trường | Ý nghĩa |
-| --- | --- |
-| `<KEY> [KEY2 ...]` | Một hoặc nhiều mã ticket (cách nhau bằng dấu cách hoặc dấu phẩy) — tự lọc trùng, chuẩn hoá chữ hoa, giữ thứ tự |
-| *(mặc định)* | Headed — mở cửa sổ Chrome để đăng nhập SSO/2FA lần đầu |
-| `--headless` | Chạy ẩn khi session SSO đã hợp lệ (hợp cho CI) |
-| `--headed` | Buộc mở cửa sổ (ghi đè `CREATE_SUBTASK_HEADLESS`) |
-| `--summary "<text>"` | Ghi đè Summary mặc định (`Test in DEV <KEY>`) — **chỉ khi có đúng 1 ticket** |
-| `--file <path>` | Đọc danh sách ticket từ file (mỗi dòng/phẩy/khoảng trắng; dòng bắt đầu `#` là comment) |
-| `--concurrency <N>` | Số ticket xử lý song song trong pool (mặc định `3`) |
-| `CREATE_SUBTASK_HEADLESS=1` | Tương đương `--headless` |
-| `CREATE_SUBTASK_CONCURRENCY` | Số luồng mặc định (bị `--concurrency` ghi đè) |
-| `JIRA_BASE_URL` | Ghi đè domain Jira (mặc định `https://jira.eon.com`) |
-
-Đặc điểm an toàn:
-- **Multi-ticket (Bounded Concurrency Pool)**: khởi động trình duyệt + xác thực SSO **1 lần duy nhất**, sau đó tạo sub-task song song theo pool (mặc định 3 luồng). **Tương thích ngược 100%** khi chỉ truyền 1 ticket.
-- **Xử lý lỗi độc lập**: lỗi ở 1 ticket **không** ảnh hưởng các ticket khác; cuối cùng in **bảng tổng kết** (Ticket cha / Trạng thái: Đã tạo mới · Đã tồn tại · Lỗi / Subtask Key / Link Jira) kèm dòng thống kê số lượng.
-- **Idempotent**: nếu sub-task trùng Summary đã tồn tại thì bỏ qua, không tạo trùng.
-- **Headed mặc định** để đăng nhập SSO/2FA lần đầu; **`--headless`** khi phiên đã hợp lệ.
-- Assignee = current user (tương đương "Assign to me"); các field khác giữ mặc định (kế thừa story cha).
-- Xử lý lỗi graceful (chưa đăng nhập, sai key, mạng lỗi) và **không chặn** luồng sinh/kiểm thử test hiện có khi chạy qua `--create-subtask`.
-- Exit code: `0` nếu **mọi** ticket thành công hoặc đã tồn tại; `1` nếu có tối thiểu 1 lỗi.
-- Ghi đè domain qua biến môi trường `JIRA_BASE_URL` (mặc định `https://jira.eon.com`).
-
 
 📖 Chi tiết đầy đủ: **[docs/ADVANCED-GUIDE.md](./docs/ADVANCED-GUIDE.md)**.
 

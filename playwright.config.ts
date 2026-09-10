@@ -25,6 +25,26 @@ const parallelRequested =
   process.env.PARALLEL === 'true' ||
   process.argv.some((arg) => arg === '--workers' || arg.startsWith('--workers='));
 
+/*
+ * NHỊP ĐỘ THỰC THI (slowMo) — giúp video ghi hình DỄ THEO DÕI.
+ * Playwright mặc định thao tác ở "tốc độ máy": gõ phím, click, mở bảng diễn ra tức
+ * thì nên tester xem lại video không kịp quan sát từng bước và trạng thái loading.
+ * `slowMo` chèn một khoảng nghỉ (ms) TRƯỚC MỖI thao tác Playwright (click, fill,
+ * press, selectOption...), khiến mỗi hành động tách bạch, trực quan trên video.
+ *
+ * - Mặc định 400ms/thao tác khi chạy cục bộ (quay video cho tester xem lại).
+ * - Tự động TẮT (0ms) khi chạy CI để không làm chậm pipeline.
+ * - Ghi đè linh hoạt qua biến môi trường SLOWMO (đơn vị ms), ví dụ:
+ *     SLOWMO=0    -> chạy nhanh tối đa (không giãn nhịp).
+ *     SLOWMO=800  -> giãn nhịp chậm hơn nữa cho video thuyết trình.
+ */
+const slowMo =
+  process.env.SLOWMO !== undefined && process.env.SLOWMO !== ''
+    ? Math.max(0, Number(process.env.SLOWMO) || 0)
+    : process.env.CI
+      ? 0
+      : 400;
+
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30 * 1000,
@@ -43,7 +63,29 @@ export default defineConfig({
     baseURL: process.env.BASE_URL || 'https://demo.playwright.dev/todomvc',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'on',
+    /*
+     * Ghi hình FULL-HD, SẮC NÉT và ĐẦY ĐỦ:
+     *  - `mode: 'on'` luôn ghi video cho mọi test (kể cả PASS) để tester xem lại.
+     *  - `size` được set tường minh 1920x1080 TRÙNG với viewport bên dưới. Nếu không
+     *    set `size`, Playwright sẽ thu nhỏ video về khung <=800x800 khiến video mờ,
+     *    chữ/dữ liệu bảng khó đọc. Set bằng viewport giúp video nét đúng độ phân giải.
+     */
+    video: {
+      mode: 'on',
+      size: { width: 1920, height: 1080 },
+    },
+    // Viewport FULL-HD để hiển thị trọn vẹn giao diện + dữ liệu trên video.
+    viewport: { width: 1920, height: 1080 },
+    // Nới thời gian chờ action/điều hướng để các bước kịp render rõ ràng trên video.
+    actionTimeout: 15 * 1000,
+    navigationTimeout: 30 * 1000,
+    /*
+     * Giãn nhịp thực thi để video ghi lại từng thao tác RÕ RÀNG, tránh cảm giác
+     * "nhảy cóc" do trình duyệt chạy quá nhanh. Xem giải thích biến `slowMo` ở trên.
+     */
+    launchOptions: {
+      slowMo,
+    },
   },
   /* Tự động bật Mock Server khi chạy test cục bộ.
      Khi BASE_URL trỏ tới server thật thì khối webServer sẽ tự động bị bỏ đi. */
@@ -60,7 +102,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // devices['Desktop Chrome'] mặc định 1280x720 và sẽ ghi đè viewport global,
+        // nên set lại 1920x1080 ngay sau spread để video/giao diện đạt Full-HD.
+        viewport: { width: 1920, height: 1080 },
+      },
     },
     // Bat them Firefox va WebKit neu can test da trinh duyet:
     // {

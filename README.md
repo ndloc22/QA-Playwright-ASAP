@@ -120,28 +120,106 @@ Mặc định hệ thống **tự động nhận diện độ phân giải màn 
 >
 > **Yêu cầu:** đã [Cài Đặt](#-cài-đặt) và cấu hình `.env` trỏ server test ASAP.
 
-### Quy trình tạo function mới (2 bước chuẩn)
+### Quy trình tạo function mới (record → sinh POM+MD → sửa MD → sinh spec → chạy trực tiếp)
 
 ```bash
 # 1️⃣ Ghi hình flow của function trên web thật (đặt tên function, KHÔNG cần mã Jira)
 npm run record:function <FUNCTION_NAME>
 
-# 2️⃣ Sinh Page Object Model + Starter Spec từ recording vừa ghi
+# 2️⃣ Sinh Page Object Model + Starter Spec + KỊCH BẢN MARKDOWN (BDD) từ recording
 npm run sync-specs <FUNCTION_NAME>
 
-#    (tùy chọn) Ghi đè khi POM/spec của function đã tồn tại từ trước
-npm run sync-specs:force <FUNCTION_NAME>
+# 3️⃣ (Tester TỰ SỬA) mở tests/testcases/functions/TC-<FUNCTION_NAME>.md, chỉnh các
+#     bước trong khối ```automation``` (thêm/bớt/đổi giá trị, thêm assertion...)
+
+# 4️⃣ Dịch file .md → .spec.ts — KHÔNG cần gọi AI/Copilot (0 token, deterministic)
+npm run md-to-spec <FUNCTION_NAME>
+
+# 5️⃣ Chạy TRỰC TIẾP (hiện trình duyệt) + tự dừng chờ đăng nhập SSO/MFA thủ công
+npm run test:function <FUNCTION_NAME>
 ```
 
 | Bước | Lệnh | Kết quả sinh ra |
 | :-: | --- | --- |
 | 1 | `npm run record:function <FUNCTION_NAME>` | `tests/recordings/functions/<FUNCTION_NAME>.recording.ts` (DOM/selector thật) |
-| 2 | `npm run sync-specs <FUNCTION_NAME>` | `tests/pages/functions/<FunctionName>Page.ts` (POM) + `tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts` (starter spec) |
-| 2* | `npm run sync-specs:force <FUNCTION_NAME>` | **Ghi đè** POM + spec đã có (mặc định KHÔNG ghi đè để an toàn) |
+| 2 | `npm run sync-specs <FUNCTION_NAME>` | `tests/pages/functions/<FunctionName>Page.ts` (POM) + `tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts` (starter spec) + **`tests/testcases/functions/TC-<FUNCTION_NAME>.md`** (kịch bản BDD sườn) |
+| 3 | *(Tester tự sửa file `.md`)* | Kịch bản chuẩn theo ý Tester (không đụng tới AI) |
+| 4 | `npm run md-to-spec <FUNCTION_NAME>` | **Sinh lại** `tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts` từ file `.md` — **0 token** |
+| 5 | `npm run test:function <FUNCTION_NAME>` | Chạy `--headed` (hiện trình duyệt) + hand-off SSO/MFA thủ công |
+| 2* | `npm run sync-specs:force <FUNCTION_NAME>` | **Ghi đè** POM + starter spec + md đã có (mặc định KHÔNG ghi đè để an toàn) |
 
 > 💡 `<FUNCTION_NAME>` là tên module tự đặt (chữ IN HOA, vd `LOGIN`, `ORDER_CREATION`). POM được đặt tên PascalCase (vd `LoginPage.ts`).
 > 🗂️ **Gom nhóm chống xung đột:** artifact của function nằm trong thư mục con `functions/` (`tests/recordings/functions/`, `tests/pages/functions/`, `tests/e2e/functions/`, `tests/testcases/functions/`), tách biệt với file Jira Ticket (Nhóm 1). `sync-specs` tạo thêm **proxy export** tại `tests/pages/<Name>Page.ts` nên mọi import cũ vẫn chạy 100%.
 > 🔁 `sync-specs` còn **merge ngược** selector thật vào OpenSpecs (Reverse-Grounding) → function sau tái dùng ngay selector đã kiểm chứng.
+
+---
+
+### 📝 Bước 3–4 chi tiết: sửa file `.md` → sinh spec **KHÔNG cần Copilot** (0 token)
+
+Sau `sync-specs`, mở file kịch bản `tests/testcases/functions/TC-<FUNCTION_NAME>.md`. File có **2 phần**:
+
+1. **Phần mô tả Given/When/Then** (văn xuôi) — để đọc hiểu, KHÔNG bị parse.
+2. **Khối ` ```automation ` (MÁY ĐỌC)** — đây mới là **nguồn** để `md-to-spec` sinh ra `.spec.ts`. Khối này đã được điền sẵn từ recording nên chạy được ngay; Tester chỉ việc chỉnh.
+
+**Cú pháp mỗi dòng trong khối ` ```automation `:**
+
+| Dòng | Ý nghĩa | Sinh ra |
+| --- | --- | --- |
+| `Given:` / `When:` / `Then:` / `And:` `<mô tả>` | Mở một nhóm `test.step` mới | `await test.step('When: ...', ...)` |
+| `<methodName>` | Gọi method không tham số của POM | `await pom.<methodName>();` |
+| `<methodName> "giá trị"` | Gọi method có tham số | `await pom.<methodName>('giá trị');` |
+| `goto` / `goto "/deep/link"` | Điều hướng tới BASE_URL (hoặc deep-link) | `await page.goto(BASE_URL ...)` |
+| `ensureAuthenticated` | Đăng nhập (hỗ trợ hand-off SSO) | `await pom.ensureAuthenticated();` |
+| `expect <member> visible` | Assertion phần tử hiển thị | `await expect(pom.<member>).toBeVisible();` |
+| `expect <member> text "x"` | Chứa text | `.toContainText('x')` |
+| `expect <member> value "x"` | Giá trị input | `.toHaveValue('x')` |
+| `expect <member> hidden\|enabled\|disabled\|count N` | Các matcher khác | `.toBeHidden()` / `.toHaveCount(N)` ... |
+| `expect url "asap"` | URL khớp regex | `await expect(page).toHaveURL(/asap/)` |
+| `pause` | **Dừng cho Tester can thiệp thủ công** (vd SSO) | `await page.pause();` |
+| `wait 1500` | Chờ (ms) | `await page.waitForTimeout(1500);` |
+| `include TC-<NAME>-01` | **Kế thừa toàn bộ bước** của scenario khác | *(chèn inline)* |
+| `# ...` / `// ...` | Ghi chú | *(bỏ qua)* |
+
+> ✅ `md-to-spec` **validate** mọi `methodName`/`member` với Page Object thật: gõ sai tên sẽ báo lỗi và **liệt kê method/locator hợp lệ**, KHÔNG sinh spec hỏng.
+> 🔁 Chạy lại `md-to-spec` bao nhiêu lần cũng cho cùng kết quả (deterministic). Đây là file spec chuẩn — **sửa ở `.md`, đừng sửa tay `.spec.ts`.**
+
+**Kế thừa Flow (90% case cũ + 10% tính năng mới):** tạo một scenario mới rồi dùng `include` để kế thừa flow cũ, chỉ viết thêm 10% bước mới:
+
+```automation
+### Scenario TC-ORDER-02: Tạo đơn + duyệt (kế thừa case tạo đơn)
+include TC-ORDER-01
+When: Bước mới (10%) — duyệt đơn vừa tạo
+  clickApproveButton
+Then: Đơn chuyển trạng thái Approved
+  expect statusCell text "Approved"
+```
+
+---
+
+### 🔐 Bước 5 chi tiết: chạy TRỰC TIẾP + can thiệp SSO/MFA thủ công
+
+ASAP dùng **Microsoft Azure AD / SSO** (`login.microsoftonline.com`) và có thể yêu cầu **MFA trên điện thoại** — **không thể tự bypass**. Lệnh `test:function` giải quyết trọn vẹn:
+
+```bash
+npm run test:function <FUNCTION_NAME>              # chạy toàn bộ scenario của function
+npm run test:function <FUNCTION_NAME> -- -g "01"   # chỉ chạy scenario TC-...-01
+npm run test:function <FUNCTION_NAME> -- --debug   # debug từng bước
+```
+
+Cơ chế:
+1. Chạy `--headed` — **hiện trình duyệt, KHÔNG chạy ngầm**, Tester nhìn thấy từng bước.
+2. Nếu gặp trang đăng nhập SSO/MFA → **trình duyệt DỪNG chờ** Tester tự đăng nhập + xác thực MFA (mặc định **120s**, đổi bằng `SSO_TIMEOUT` tính bằng ms).
+3. Ngay khi quay lại ASAP → **tự lưu `.auth/user.json`** (storageState) rồi **chạy tiếp** các bước testcase.
+4. Các lần chạy sau **tái sử dụng** `.auth/user.json` → không phải đăng nhập lại (tới khi phiên hết hạn thì tự hand-off lại).
+
+```bash
+# Nới thời gian chờ đăng nhập SSO/MFA lên 180 giây (Windows PowerShell)
+$env:SSO_TIMEOUT=180000; npm run test:function <FUNCTION_NAME>
+```
+
+> 💡 Muốn chèn 1 điểm dừng thủ công giữa flow (vd để thao tác tay), thêm dòng `pause` vào khối `automation` — trình duyệt sẽ dừng tại đúng bước đó cho tới khi Tester bấm ▶️ Resume trong Playwright Inspector.
+
+
 
 ### Chạy & Debug một function
 
@@ -187,9 +265,12 @@ npx playwright test tests/e2e/functions/TC-<FUNCTION_NAME>.spec.ts -g "01" --deb
 | `npm run regenerate <KEY>` | 1 | Regenerate spec từ recording (bỏ qua fetch/summarize), gỡ `test.fixme` |
 | `npm run record:ticket <KEY>` | 1 | Mở web thật + codegen, ghi flow Jira Ticket → `tests/recordings/<KEY>.recording.ts` |
 | `npm run record:function <FUNCTION>` | 2 | Mở web thật + codegen, ghi flow Function → `tests/recordings/functions/<FUNCTION>.recording.ts` |
+| `npm run md-to-spec <FUNCTION>` | 2 | **(0 token)** Dịch `tests/testcases/functions/TC-<FUNCTION>.md` → `TC-<FUNCTION>.spec.ts` (không gọi AI) |
+| `npm run sync-specs:from-md <FUNCTION>` | 2 | Alias của `md-to-spec` (tên gợi nhớ) |
+| `npm run test:function <FUNCTION>` | 2 | Chạy spec `--headed` (hiện trình duyệt) + hand-off SSO/MFA thủ công, tự lưu `.auth/user.json` |
 | `npm run fetch-ticket <KEY>` | 1 | Bóc tách Jira ticket (text + ảnh + diagram) vào `docs/tickets/` |
 | `npm run create-subtask <KEY> [KEY2 ...]` | 1 | **(0 token)** Tạo Jira Test Sub-task `Test in DEV <KEY>` (assign to me) qua REST API |
-| `npm run sync-specs <KEY|FUNCTION>` | 1·2 | Merge selector (Reverse-Grounding) + sinh POM & starter spec (không ghi đè file đã có) |
+| `npm run sync-specs <KEY|FUNCTION>` | 1·2 | Merge selector (Reverse-Grounding) + sinh POM & starter spec **& kịch bản BDD `.md`** (không ghi đè file đã có) |
 | `npm run sync-specs <KEY|FUNCTION> force` | 1·2 | **Ghi đè** cả POM lẫn spec ngay |
 | `npm run sync-specs:force <KEY|FUNCTION>` | 1·2 | Alias 1-click tương đương lệnh trên |
 | `npm run generate-codebase-specs` | 1 | Bóc tách OpenSpecs từ mã nguồn Axon Ivy |

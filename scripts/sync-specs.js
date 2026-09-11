@@ -676,7 +676,7 @@ function pickEntryMember(pageLocators) {
 /**
  * Render toàn bộ nội dung file Page Object Model (TypeScript, strict-safe).
  */
-function renderPomClass(pageClass, key, recordingRel, model, baseFallback) {
+function renderPomClass(pageClass, key, recordingRel, model, baseFallback, supportImport) {
   const { hasFrame, frameTitle, locators } = model;
   const pageLocators = locators.filter((l) => !l.isFrame);
   const frameLocators = locators.filter((l) => l.isFrame);
@@ -691,6 +691,7 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback) {
 
   const lines = [];
   lines.push(`import { ${imports.join(', ')} } from '@playwright/test';`);
+  lines.push(`import { ensureInteractiveAuth } from '${supportImport || '../support/interactive-auth'}';`);
   lines.push('');
   lines.push('// Credentials come from the environment (.env via playwright.config.ts) so no secret is');
   lines.push('// baked into source. Override per-call by passing arguments to ensureAuthenticated().');
@@ -741,6 +742,19 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback) {
   lines.push(
     "    const baseUrl = (process.env.BASE_URL || BASE_URL_FALLBACK).replace(/\\/+$/, '') + '/';"
   );
+  lines.push('');
+  lines.push('    // 🔐 SSO/MFA hand-off: khi chạy `npm run test:function` (INTERACTIVE_SSO=1), nếu');
+  lines.push('    // gặp trang đăng nhập Microsoft SSO/MFA thì DỪNG chờ Tester đăng nhập thủ công,');
+  lines.push('    // rồi tự lưu .auth/user.json và chạy tiếp (ASAP không thể tự bypass authen).');
+  lines.push("    if (process.env.INTERACTIVE_SSO === '1') {");
+  if (entryMember) {
+    lines.push(`      await ensureInteractiveAuth(this.page, { baseUrl, readyLocator: this.${entryMember} });`);
+  } else {
+    lines.push('      await ensureInteractiveAuth(this.page, { baseUrl });');
+  }
+  lines.push('      return;');
+  lines.push('    }');
+  lines.push('');
   if (entryMember) {
     // Robust against the portal's client-side redirect chain: after goto(), the login
     // form is NOT visible immediately. Each attempt waits for the page to SETTLE on
@@ -850,7 +864,8 @@ function generatePom(key, { force = false } = {}) {
     key,
     recordingRel,
     model,
-    cleanseEntryUrl(extractEntryUrl(source))
+    cleanseEntryUrl(extractEntryUrl(source)),
+    isFunction ? '../../support/interactive-auth' : '../support/interactive-auth'
   );
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFull, code, 'utf-8');
@@ -1012,6 +1027,153 @@ function generateSpec(key, { force = false } = {}) {
   return { status: existed ? 'overwritten' : 'created', specRel, pageClass, recordingRel };
 }
 
+const TESTCASES_DIR = path.join(ROOT_DIR, 'tests', 'testcases');
+const TESTCASES_FUNCTIONS_DIR = path.join(TESTCASES_DIR, 'functions');
+
+/**
+ * Render 1 dòng "call" trong khối ```automation``` từ 1 action đã ghi. Với
+ * fill/type/press/selectOption sẽ chèn sẵn giá trị thật đã record (nếu có) để
+ * Tester chỉ việc chỉnh, còn click/hover... thì không cần tham số.
+ */
+function renderAutomationCall(member, action, values) {
+  const meta = POM_ACTION_META[action];
+  if (!meta) return null;
+  const methodName = `${action}${pascal(member)}`;
+  if (!meta.param) return methodName;
+  const sample = Array.isArray(values) && values.length ? values[0] : '';
+  return `${methodName} ${JSON.stringify(sample)}`;
+}
+
+/**
+ * Render nội dung file kịch bản Markdown (BDD) cho 1 KEY từ model của recording.
+ *
+ * File gồm 2 phần:
+ *   1. Phần văn xuôi Given/When/Then để Tester đọc & mô tả nghiệp vụ (KHÔNG parse).
+ *   2. Khối ```automation``` MÁY ĐỌC ĐƯỢC — đây mới là nguồn được
+ *      `npm run md-to-spec <KEY>` dịch ra file .spec.ts (0 token, không gọi AI).
+ *
+ * Khối automation được điền sẵn từ recording nên chạy được ngay; Tester chỉ cần
+ * chỉnh sửa (thêm/bớt/đổi giá trị) rồi chạy md-to-spec để sinh lại spec.
+ */
+function renderTestcaseMd(pageClass, key, recordingRel, model) {
+  const { locators } = model;
+  const pageLocators = locators.filter((l) => !l.isFrame);
+  const entryMember = pickEntryMember(pageLocators);
+  const title = toTitle(key);
+
+  // Danh sách "action lines" cho khối When (mọi action đã ghi, trừ entry click
+  // vì entry đã nằm trong ensureAuthenticated/goto flow riêng nếu là login).
+  const whenLines = [];
+  for (const l of locators) {
+    if (isLoginLocator(l)) continue; // login do ensureAuthenticated lo
+    for (const action of Array.from(l.actions).sort()) {
+      const line = renderAutomationCall(l.member, action, l.values);
+      if (line) whenLines.push(line);
+    }
+  }
+
+  const L = [];
+  L.push(`# Testcase: TC-${key} — ${title}`);
+  L.push('');
+  L.push('- **Mã Testcase:** `TC-' + key + '-01`');
+  L.push(`- **Module / Function:** ${title}`);
+  L.push('- **Mức độ:** Medium');
+  L.push(`- **Page Object:** \`${pageClass}\` (auto-generated từ \`${recordingRel}\`)`);
+  L.push('- **Precondition:** Tester đã đăng nhập được ASAP (SSO/MFA nếu có sẽ hand-off thủ công khi chạy `--headed`).');
+  L.push('');
+  L.push('> ✍️ **Tester chỉnh sửa file này**, sau đó chạy `npm run md-to-spec ' + key + '`');
+  L.push('> để sinh lại `tests/e2e/functions/TC-' + key + '.spec.ts` **KHÔNG cần gọi AI/Copilot** (0 token).');
+  L.push('');
+  L.push('## Các Bước Thực Hiện (Given / When / Then — phần mô tả cho người đọc)');
+  L.push('1. **Given:** Tester mở ASAP và đăng nhập thành công.');
+  L.push(`2. **When:** Tester thao tác trên module **${title}** (xem chi tiết ở khối \`automation\` bên dưới).`);
+  L.push('3. **Then (Expected):**');
+  if (entryMember) {
+    L.push(`   - Điểm vào module (\`${entryMember}\`) hiển thị.`);
+  }
+  L.push('   - (Bổ sung kỳ vọng nghiệp vụ thật tại đây.)');
+  L.push('');
+  L.push('---');
+  L.push('');
+  L.push('## 🤖 Automation Steps (MÁY ĐỌC — nguồn sinh spec)');
+  L.push('');
+  L.push('> Cú pháp mỗi dòng trong khối dưới đây:');
+  L.push('> - `Given:` / `When:` / `Then:` / `And:` → mở một nhóm `test.step` mới (chữ sau dấu `:` là mô tả).');
+  L.push('> - `<methodName> "giá trị"` → gọi method tương ứng trên Page Object (vd `fillUsername "admin"`).');
+  L.push('> - `<methodName>` (không tham số) → gọi method không đối số (vd `clickLoginButton`).');
+  L.push('> - `expect <member> <matcher> ["value"]` → assertion. matcher: `visible`, `hidden`, `enabled`,');
+  L.push('>   `disabled`, `text`, `value`, `count`, `url`.');
+  L.push('> - `include TC-' + key + '-01` → **kế thừa** toàn bộ bước của scenario khác (tái dùng 90% flow).');
+  L.push('> - `pause` → dừng cho Tester can thiệp thủ công (vd SSO); `wait <ms>` → chờ.');
+  L.push('> - `goto` / `ensureAuthenticated` → điều hướng base URL / đăng nhập (hỗ trợ hand-off SSO).');
+  L.push('');
+  L.push('### Scenario TC-' + key + '-01: ' + title + ' (flow gốc)');
+  L.push('');
+  L.push('```automation');
+  L.push('Given: Tester mở ASAP và đăng nhập');
+  L.push('  goto');
+  L.push('  ensureAuthenticated');
+  L.push('When: Thao tác trên module ' + title);
+  if (whenLines.length) {
+    for (const line of whenLines) L.push('  ' + line);
+  } else {
+    L.push('  # (chưa bóc tách được action — thêm lời gọi method thủ công ở đây)');
+  }
+  L.push('Then: Kết quả mong đợi hiển thị');
+  if (entryMember) {
+    L.push('  expect ' + entryMember + ' visible');
+  } else {
+    L.push('  # expect <member> visible');
+  }
+  L.push('```');
+  L.push('');
+  L.push('### Scenario TC-' + key + '-02: (ví dụ kế thừa 90% + thêm 10% bước mới)');
+  L.push('');
+  L.push('> Bỏ comment & chỉnh để tạo case mới **kế thừa** flow gốc rồi thêm bước mới:');
+  L.push('');
+  L.push('```automation-disabled');
+  L.push('include TC-' + key + '-01');
+  L.push('When: Bước mới bổ sung (10%)');
+  L.push('  # thêm lời gọi method mới ở đây');
+  L.push('Then: Kỳ vọng mới');
+  L.push('  # expect <member> visible');
+  L.push('```');
+  L.push('');
+  return L.join('\n');
+}
+
+/**
+ * Sinh file kịch bản Markdown BDD cho KEY. Non-destructive: KHÔNG ghi đè file md
+ * đã tồn tại (để bảo toàn chỉnh sửa thủ công của Tester) trừ khi force = true.
+ */
+function generateTestcaseMd(key, { force = false } = {}) {
+  const pageClass = toPascalCasePageName(key);
+  const { isFunction, recordingFull, recordingRel } = resolveRecording(key);
+  const mdDir = isFunction ? TESTCASES_FUNCTIONS_DIR : TESTCASES_DIR;
+  const mdRel = isFunction
+    ? `tests/testcases/functions/TC-${key}.md`
+    : `tests/testcases/TC-${key}.md`;
+  const mdFull = path.join(mdDir, `TC-${key}.md`);
+
+  if (!fs.existsSync(recordingFull)) return { status: 'missing', mdRel, pageClass, recordingRel };
+  const source = fs.readFileSync(recordingFull, 'utf-8');
+  if (!hasRealInteractions(source)) return { status: 'empty', mdRel, pageClass, recordingRel };
+
+  const model = extractPomModel(source);
+  if (!model.locators.length) return { status: 'no-locators', mdRel, pageClass, recordingRel };
+
+  const existed = fs.existsSync(mdFull);
+  if (existed && !force) {
+    return { status: 'exists', mdRel, pageClass, recordingRel };
+  }
+
+  const code = renderTestcaseMd(pageClass, key, recordingRel, model);
+  fs.mkdirSync(mdDir, { recursive: true });
+  fs.writeFileSync(mdFull, code, 'utf-8');
+
+  return { status: existed ? 'overwritten' : 'created', mdRel, pageClass, recordingRel };
+}
+
 function loadLiveSpec() {
   if (!fs.existsSync(LIVE_SPEC_PATH)) {
     return {
@@ -1096,6 +1258,10 @@ function syncKey(key, options = {}) {
   if (options.generateSpec) {
     out.spec = generateSpec(normalized, { force: options.forceSpec === true });
   }
+  // BDD markdown scenario generation (guarded like spec/POM).
+  if (options.generateMd) {
+    out.md = generateTestcaseMd(normalized, { force: options.forceMd === true });
+  }
   return out;
 }
 
@@ -1168,6 +1334,34 @@ function reportSpec(key, spec) {
   }
 }
 
+/**
+ * Report kết quả sinh file kịch bản Markdown BDD ra CLI.
+ */
+function reportMd(key, md) {
+  switch (md.status) {
+    case 'created':
+      console.log(`📝 ${key}: sinh kịch bản BDD → ${md.mdRel} (chỉnh xong chạy: npm run md-to-spec ${key}).`);
+      break;
+    case 'overwritten':
+      console.log(`📝 ${key}: ghi đè kịch bản BDD (--force-md) → ${md.mdRel}.`);
+      break;
+    case 'exists':
+      console.log(`↩️  ${key}: kịch bản BDD đã tồn tại ${md.mdRel} → giữ nguyên (dùng --force-md để ghi đè).`);
+      break;
+    case 'missing':
+      console.warn(`⚠️  ${key}: không thấy ${md.recordingRel} → bỏ qua sinh kịch bản BDD.`);
+      break;
+    case 'empty':
+      console.warn(`⚠️  ${key}: recording không có thao tác thật → bỏ qua sinh kịch bản BDD.`);
+      break;
+    case 'no-locators':
+      console.warn(`⚠️  ${key}: không bóc tách được locator sạch nào → bỏ qua sinh kịch bản BDD.`);
+      break;
+    default:
+      console.warn(`⚠️  ${key}: md status = ${md.status}`);
+  }
+}
+
 function listRecordingKeys() {
   const keys = new Set();
   for (const dir of [RECORDINGS_DIR, RECORDINGS_FUNCTIONS_DIR]) {
@@ -1190,6 +1384,8 @@ function main() {
   const forcePom = argv.includes('--force-pom') || forceKeyword;
   const noSpec = argv.includes('--no-spec');
   const forceSpec = argv.includes('--force-spec') || forceKeyword;
+  const noMd = argv.includes('--no-md');
+  const forceMd = argv.includes('--force-md') || forceKeyword;
   // Ticket KEY: first positional that is NOT a known keyword ('force', '--all', etc.)
   const positional = argv.find((a) => !a.startsWith('--') && a.toLowerCase() !== 'force');
 
@@ -1207,8 +1403,8 @@ function main() {
   } else {
     const key = parseTicketKey(positional);
     if (!key) {
-      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [force] [--no-pom] [--force-pom] [--no-spec] [--force-spec]\x1b[0m');
-      console.log('          npm run sync-specs -- --all [force] [--force-pom] [--force-spec]');
+      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [force] [--no-pom] [--force-pom] [--no-spec] [--force-spec] [--no-md] [--force-md]\x1b[0m');
+      console.log('          npm run sync-specs -- --all [force] [--force-pom] [--force-spec] [--force-md]');
       console.log('   Example: npm run sync-specs ADMINISTRATION          # giữ nguyên file hiện có');
       console.log('            npm run sync-specs ADMINISTRATION force     # ghi đè cả POM lẫn spec');
       console.log('            npm run sync-specs:force ADMINISTRATION     # alias 1-click cho force\n');
@@ -1276,26 +1472,48 @@ function main() {
     console.log('------------------------------------------------------');
   }
 
-  // ─── Bước 3 (MỚI): sinh starter E2E spec (có guard chống ghi đè) ───
+  // ─── Bước 3: sinh starter E2E spec (có guard chống ghi đè) ───
   if (noSpec) {
-    console.log('\nℹ️  --no-spec: bỏ qua bước sinh starter E2E spec.\n');
+    console.log('\nℹ️  --no-spec: bỏ qua bước sinh starter E2E spec.');
+  } else {
+    console.log('');
+    console.log('------------------------------------------------------');
+    console.log(' 🧪 Starter spec: Recording -> tests/e2e/TC-<KEY>.spec.ts');
+    console.log('------------------------------------------------------');
+    let specGenerated = 0;
+    for (const key of keys) {
+      const spec = generateSpec(key, { force: forceSpec });
+      if (spec.status === 'created' || spec.status === 'overwritten') specGenerated++;
+      reportSpec(key, spec);
+    }
+    console.log('------------------------------------------------------');
+    console.log(
+      `🧪 Starter spec xong: ${specGenerated}/${keys.length} file được ${forceSpec ? 'ghi/ghi đè' : 'sinh mới'}.`
+    );
+    console.log('------------------------------------------------------');
+  }
+
+  // ─── Bước 4 (MỚI): sinh kịch bản Markdown BDD (nguồn cho md-to-spec) ───
+  if (noMd) {
+    console.log('\nℹ️  --no-md: bỏ qua bước sinh kịch bản BDD.\n');
     return;
   }
 
   console.log('');
   console.log('------------------------------------------------------');
-  console.log(' 🧪 Starter spec: Recording -> tests/e2e/TC-<KEY>.spec.ts');
+  console.log(' 📝 Kịch bản BDD: Recording -> tests/testcases/functions/TC-<KEY>.md');
   console.log('------------------------------------------------------');
-  let specGenerated = 0;
+  let mdGenerated = 0;
   for (const key of keys) {
-    const spec = generateSpec(key, { force: forceSpec });
-    if (spec.status === 'created' || spec.status === 'overwritten') specGenerated++;
-    reportSpec(key, spec);
+    const md = generateTestcaseMd(key, { force: forceMd });
+    if (md.status === 'created' || md.status === 'overwritten') mdGenerated++;
+    reportMd(key, md);
   }
   console.log('------------------------------------------------------');
   console.log(
-    `🧪 Starter spec xong: ${specGenerated}/${keys.length} file được ${forceSpec ? 'ghi/ghi đè' : 'sinh mới'}.`
+    `📝 Kịch bản BDD xong: ${mdGenerated}/${keys.length} file được ${forceMd ? 'ghi/ghi đè' : 'sinh mới'}.`
   );
+  console.log('   → Chỉnh file .md rồi chạy: npm run md-to-spec <KEY>  (sinh spec, 0 token).');
   console.log('------------------------------------------------------\n');
 }
 
@@ -1307,6 +1525,7 @@ module.exports = {
   toPascalCasePageName,
   generatePom,
   generateSpec,
+  generateTestcaseMd,
   cleanseEntryUrl,
   extractPomModel,
   LIVE_SPEC_REL

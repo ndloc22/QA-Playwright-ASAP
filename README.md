@@ -85,17 +85,17 @@ npm run regenerate ASAP-101
 
 #### 🖥️ Độ phân giải khi record (Viewport & Screen Resolution)
 
-Mặc định là **Desktop 1600 × 900** — mở ra giao diện rộng rãi, phủ kín hầu hết màn hình mà không bị đóng khung hay viền trắng thừa thãi (tránh được lỗi letterbox 1280×720 của Playwright gốc). Bạn có thể đổi sang Full HD 1080p hoặc kích thước Laptop qua các cờ preset hoặc biến `CODEGEN_VIEWPORT` trong `.env`:
+Mặc định là **Full HD 1920 × 1080** — mở ra giao diện full màn hình, tràn viền trên màn hình tiêu chuẩn 1080p, loại bỏ hoàn toàn hiện tượng đóng khung hay viền trắng thừa thãi (tránh được lỗi letterbox 1280×720 của Playwright gốc). Nếu sử dụng màn hình nhỏ hơn hoặc laptop, bạn có thể chuyển qua các cờ preset hoặc biến `CODEGEN_VIEWPORT` trong `.env`:
 
 | Cách dùng | Ví dụ | Kích thước |
 | --- | --- | --- |
-| *(mặc định)* | `npm run record:ticket <KEY>` | **1600 × 900** (Desktop rộng rãi) |
-| Preset Full HD | `npm run record:ticket <KEY> -- --fullhd` | 1920 × 1080 (Tràn viền) |
+| *(mặc định)* | `npm run record:ticket <KEY>` | **1920 × 1080** (Full HD tràn viền) |
+| Preset Desktop | `npm run record:ticket <KEY> -- --desktop` | 1600 × 900 (Desktop vừa) |
 | Preset laptop | `npm run record:ticket <KEY> -- --laptop` | 1366 × 768 |
-| Tự do | `npm run record:ticket <KEY> -- --viewport 1920,1080` | Tùy chỉnh |
-| `.env` | `CODEGEN_VIEWPORT=1920,1080` | Cố định mặc định (bỏ trống = 1600,900) |
+| Tự do | `npm run record:ticket <KEY> -- --viewport 1600,900` | Tùy chỉnh |
+| `.env` | `CODEGEN_VIEWPORT=1600,900` | Cố định mặc định (bỏ trống = 1920,1080) |
 
-> 💡 Preset cũng áp dụng cho `npm run record:function <NAME>`. Thứ tự ưu tiên: cờ `--viewport` / preset trên dòng lệnh **>** biến `CODEGEN_VIEWPORT` **>** mặc định 1600×900.
+> 💡 Preset cũng áp dụng cho `npm run record:function <NAME>`. Thứ tự ưu tiên: cờ `--viewport` / preset trên dòng lệnh **>** biến `CODEGEN_VIEWPORT` **>** mặc định 1920×1080.
 
 ### Các lệnh phụ trợ cho Nhóm 1
 

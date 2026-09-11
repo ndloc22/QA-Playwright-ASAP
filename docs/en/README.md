@@ -42,17 +42,17 @@ npm run regenerate ASAP-101
 
 #### 🖥️ Viewport & Screen Resolution when recording
 
-The default is **Desktop 1600 × 900** — opens a spacious layout filling most of the screen without awkward letterboxing or blank borders (avoiding Playwright's cramped 1280×720 default). You can switch to Full HD or Laptop size via preset flags or the `CODEGEN_VIEWPORT` variable in `.env`:
+The default is **Full HD 1920 × 1080** — opens a full-screen, borderless layout on standard 1080p monitors, completely eliminating awkward letterboxing or blank borders (avoiding Playwright's cramped 1280×720 default). If using smaller displays or laptops, you can switch via preset flags or the `CODEGEN_VIEWPORT` variable in `.env`:
 
 | Usage | Example | Size |
 | --- | --- | --- |
-| *(default)* | `npm run record:ticket <KEY>` | **1600 × 900** (Spacious Desktop) |
-| Full HD preset | `npm run record:ticket <KEY> -- --fullhd` | 1920 × 1080 (Full borderless) |
+| *(default)* | `npm run record:ticket <KEY>` | **1920 × 1080** (Full HD borderless) |
+| Desktop preset | `npm run record:ticket <KEY> -- --desktop` | 1600 × 900 (Compact desktop) |
 | Laptop preset | `npm run record:ticket <KEY> -- --laptop` | 1366 × 768 |
-| Free-form | `npm run record:ticket <KEY> -- --viewport 1920,1080` | Custom |
-| `.env` | `CODEGEN_VIEWPORT=1920,1080` | Fixed default (empty = 1600,900) |
+| Free-form | `npm run record:ticket <KEY> -- --viewport 1600,900` | Custom |
+| `.env` | `CODEGEN_VIEWPORT=1600,900` | Fixed default (empty = 1920,1080) |
 
-> 💡 Presets also apply to `npm run record:function <NAME>`. Precedence: CLI `--viewport` / preset flag **>** `CODEGEN_VIEWPORT` env var **>** 1600×900 default.
+> 💡 Presets also apply to `npm run record:function <NAME>`. Precedence: CLI `--viewport` / preset flag **>** `CODEGEN_VIEWPORT` env var **>** 1920×1080 default.
 
 ---
 

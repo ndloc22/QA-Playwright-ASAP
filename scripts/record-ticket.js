@@ -111,11 +111,11 @@ if (!key) {
   console.log('      Example: npm run record:ticket KFWT-1161');
   console.log('   \x1b[36mNhóm 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
   console.log('      Example: npm run record:function SEARCH_TELECONTROL');
-  console.log('\n\x1b[33m🖥️  Viewport (tùy chọn):\x1b[0m mặc định Desktop 1600x900 (rộng rãi, phủ kín màn hình, không bị viền trắng).\n' +
-    '   \x1b[36mPreset:\x1b[0m   --desktop (1600x900, mặc định) | --fullhd (1920x1080) | --laptop (1366x768)\n' +
-    '   \x1b[36mTự do:\x1b[0m    --viewport <w,h>   (vd: --viewport 1920,1080)\n' +
-    '   \x1b[36m.env:\x1b[0m     CODEGEN_VIEWPORT=1600,900   (mặc định 1600,900 nếu bỏ trống)\n' +
-    '   Example: npm run record:ticket <KEY> -- --fullhd\n');
+  console.log('\n\x1b[33m🖥️  Viewport (tùy chọn):\x1b[0m mặc định Full HD 1920x1080 (full màn hình, tràn viền, không bị viền trắng).\n' +
+    '   \x1b[36mPreset:\x1b[0m   --fullhd (1920x1080, mặc định) | --desktop (1600x900) | --laptop (1366x768)\n' +
+    '   \x1b[36mTự do:\x1b[0m    --viewport <w,h>   (vd: --viewport 1600,900)\n' +
+    '   \x1b[36m.env:\x1b[0m     CODEGEN_VIEWPORT=1920,1080   (mặc định 1920,1080 nếu bỏ trống)\n' +
+    '   Example: npm run record:ticket <KEY> -- --desktop\n');
   process.exit(1);
 }
 
@@ -128,9 +128,10 @@ if (urlFlagIndex !== -1 && argv[urlFlagIndex + 1]) {
   startUrl = startUrl.replace(/\/+$/, '') + (extraPath.startsWith('/') ? extraPath : `/${extraPath}`);
 }
 
-// Viewport resolution for codegen. Default to a spacious Desktop resolution (1600x900)
-// so Portal / PrimeFaces components render comfortably without letterboxing (avoiding
-// Playwright's cramped 1280x720 default), while still fitting standard 1080p screens.
+// Viewport resolution for codegen. Default to Full HD resolution (1920x1080)
+// so the recorder opens full-screen / tràn viền on standard 1080p monitors
+// without awkward letterboxing or blank borders (avoiding Playwright's cramped
+// 1280x720 default).
 //
 // Convenience preset flags let the Tester choose another fixed size when needed:
 const VIEWPORT_PRESETS = {
@@ -139,11 +140,11 @@ const VIEWPORT_PRESETS = {
   '--fullhd': '1920,1080',
 };
 // Override precedence (lowest -> highest):
-//   1. Default: '1600,900' (Spacious Desktop)
+//   1. Default: '1920,1080' (Full HD tràn viền)
 //   2. CODEGEN_VIEWPORT env var
 //   3. Preset flag: --laptop | --desktop | --fullhd
 //   4. Free-form flag: --viewport <w,h>
-let viewportSize = process.env.CODEGEN_VIEWPORT || '1600,900';
+let viewportSize = process.env.CODEGEN_VIEWPORT || '1920,1080';
 for (const [flag, preset] of Object.entries(VIEWPORT_PRESETS)) {
   if (argv.includes(flag)) {
     viewportSize = preset;

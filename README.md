@@ -83,6 +83,21 @@ npm run regenerate ASAP-101
 > 💡 Có thể thay `<KEY>` bằng link Jira đầy đủ: `npm run auto-test https://jira.eon.com/browse/ASAP-101`.
 > 💰 Ticket đơn giản → hạ tầng model cho rẻ: `npm run auto-test <KEY> -- --sonnet` (hoặc `--model claude-sonnet-5`).
 
+#### 🖥️ Độ phân giải khi record (Viewport & Screen Resolution)
+
+Mặc định là **Auto** — Playwright Codegen tự khớp với kích thước cửa sổ hệ điều hành, nên bạn chỉ cần **Maximize** cửa sổ để dùng trọn **100% màn hình** mà **không bao giờ bị cắt layout / che thanh nút bấm phía dưới** (thường gặp trên màn hình 1080p hoặc laptop bật **Windows Scaling 125–150%**). Muốn cố định kích thước, dùng cờ preset, cờ tự do `--viewport`, hoặc biến `CODEGEN_VIEWPORT` trong `.env`:
+
+| Cách dùng | Ví dụ | Kích thước |
+| --- | --- | --- |
+| *(mặc định)* | `npm run record:ticket <KEY>` | **Auto** (khuyến nghị – hãy Maximize) |
+| Preset laptop | `npm run record:ticket <KEY> -- --laptop` | 1366 × 768 |
+| Preset desktop | `npm run record:ticket <KEY> -- --desktop` | 1600 × 900 |
+| Preset Full HD | `npm run record:ticket <KEY> -- --fullhd` | 1920 × 1080 |
+| Tự do | `npm run record:ticket <KEY> -- --viewport 1920,1080` | Tùy chỉnh |
+| `.env` | `CODEGEN_VIEWPORT=1600,900` | Cố định mặc định (bỏ trống = Auto) |
+
+> 💡 Preset cũng áp dụng cho `npm run record:function <NAME>`. Thứ tự ưu tiên: cờ `--viewport` / preset trên dòng lệnh **>** biến `CODEGEN_VIEWPORT` **>** mặc định Auto.
+
 ### Các lệnh phụ trợ cho Nhóm 1
 
 | Lệnh | Công dụng |

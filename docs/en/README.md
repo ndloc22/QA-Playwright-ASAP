@@ -40,6 +40,21 @@ npm run regenerate ASAP-101
 
 > 💡 You can pass a ticket URL instead of `<KEY>`: `npm run auto-test https://your-jira/browse/ASAP-101`.
 
+#### 🖥️ Viewport & Screen Resolution when recording
+
+The default is **Auto** — Playwright Codegen matches the real OS window size, so you can simply **Maximize** the recorder window to use **100% of the screen** without ever **clipping the layout or hiding the action buttons at the bottom** (a common issue on 1080p screens or laptops running **Windows Scaling at 125–150%**). To pin a fixed size, use a preset flag, the free-form `--viewport` flag, or the `CODEGEN_VIEWPORT` variable in `.env`:
+
+| Usage | Example | Size |
+| --- | --- | --- |
+| *(default)* | `npm run record:ticket <KEY>` | **Auto** (recommended – Maximize) |
+| Laptop preset | `npm run record:ticket <KEY> -- --laptop` | 1366 × 768 |
+| Desktop preset | `npm run record:ticket <KEY> -- --desktop` | 1600 × 900 |
+| Full HD preset | `npm run record:ticket <KEY> -- --fullhd` | 1920 × 1080 |
+| Free-form | `npm run record:ticket <KEY> -- --viewport 1920,1080` | Custom |
+| `.env` | `CODEGEN_VIEWPORT=1600,900` | Fixed default (empty = Auto) |
+
+> 💡 Presets also apply to `npm run record:function <NAME>`. Precedence: CLI `--viewport` / preset flag **>** `CODEGEN_VIEWPORT` env var **>** the Auto default.
+
 ---
 
 ## 📋 Command Cheatsheet

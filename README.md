@@ -85,17 +85,19 @@ npm run regenerate ASAP-101
 
 #### 🖥️ Độ phân giải khi record (Viewport & Screen Resolution)
 
-Mặc định là **Full HD 1920 × 1080** — mở ra giao diện full màn hình, tràn viền trên màn hình tiêu chuẩn 1080p, loại bỏ hoàn toàn hiện tượng đóng khung hay viền trắng thừa thãi (tránh được lỗi letterbox 1280×720 của Playwright gốc). Nếu sử dụng màn hình nhỏ hơn hoặc laptop, bạn có thể chuyển qua các cờ preset hoặc biến `CODEGEN_VIEWPORT` trong `.env`:
+Mặc định hệ thống **tự động nhận diện độ phân giải màn hình thật của máy** (Auto-detect display resolution, ví dụ **2K 2560 × 1440** hoặc **Full HD 1920 × 1080**) — mở ra giao diện full màn hình 100%, tràn viền hoàn hảo trên mọi kích thước màn hình mà không bị đóng khung hay viền trắng thừa thãi (tránh được lỗi letterbox 1280×720 của Playwright gốc). Bạn cũng có thể cố định kích thước qua các cờ preset hoặc biến `CODEGEN_VIEWPORT` trong `.env`:
 
 | Cách dùng | Ví dụ | Kích thước |
 | --- | --- | --- |
-| *(mặc định)* | `npm run record:ticket <KEY>` | **1920 × 1080** (Full HD tràn viền) |
+| *(mặc định)* | `npm run record:ticket <KEY>` | **Tự động theo màn hình máy bạn** (vd 2560×1440, 1920×1080...) |
+| Preset 2K / QHD | `npm run record:ticket <KEY> -- --2k` | 2560 × 1440 (Tràn viền 2K) |
+| Preset Full HD | `npm run record:ticket <KEY> -- --fullhd` | 1920 × 1080 (Chuẩn 1080p) |
 | Preset Desktop | `npm run record:ticket <KEY> -- --desktop` | 1600 × 900 (Desktop vừa) |
 | Preset laptop | `npm run record:ticket <KEY> -- --laptop` | 1366 × 768 |
-| Tự do | `npm run record:ticket <KEY> -- --viewport 1600,900` | Tùy chỉnh |
-| `.env` | `CODEGEN_VIEWPORT=1600,900` | Cố định mặc định (bỏ trống = 1920,1080) |
+| Tự do | `npm run record:ticket <KEY> -- --viewport 2560,1440` | Tùy chỉnh |
+| `.env` | `CODEGEN_VIEWPORT=auto` | Mặc định tự động (hoặc điền số cố định nếu muốn) |
 
-> 💡 Preset cũng áp dụng cho `npm run record:function <NAME>`. Thứ tự ưu tiên: cờ `--viewport` / preset trên dòng lệnh **>** biến `CODEGEN_VIEWPORT` **>** mặc định 1920×1080.
+> 💡 Preset cũng áp dụng cho `npm run record:function <NAME>`. Thứ tự ưu tiên: cờ `--viewport` / preset trên dòng lệnh **>** biến `CODEGEN_VIEWPORT` trong `.env` **>** Tự động nhận diện theo màn hình thật.
 
 ### Các lệnh phụ trợ cho Nhóm 1
 

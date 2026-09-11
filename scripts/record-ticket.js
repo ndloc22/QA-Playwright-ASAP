@@ -34,6 +34,24 @@ const ROOT_DIR = path.join(__dirname, '..');
 const RECORDINGS_DIR = path.join(ROOT_DIR, 'tests', 'recordings');
 const AUTH_STORAGE_STATE = path.join(ROOT_DIR, '.auth', 'user.json');
 
+function detectScreenResolution() {
+  if (IS_WINDOWS) {
+    try {
+      const psCmd = 'Add-Type -AssemblyName System.Windows.Forms; $s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "$($s.Width),$($s.Height)"';
+      const res = spawnSync('powershell', ['-NoProfile', '-Command', psCmd], { encoding: 'utf8', timeout: 3000 });
+      if (!res.error && res.stdout) {
+        const match = res.stdout.trim().match(/^(\d+),(\d+)$/);
+        if (match) {
+          return `${match[1]},${match[2]}`;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+  return null;
+}
+
 function parseTicketKey(arg) {
   if (!arg) return null;
   let value = String(arg).trim();
@@ -111,11 +129,11 @@ if (!key) {
   console.log('      Example: npm run record:ticket KFWT-1161');
   console.log('   \x1b[36mNhóm 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
   console.log('      Example: npm run record:function SEARCH_TELECONTROL');
-  console.log('\n\x1b[33m🖥️  Viewport (tùy chọn):\x1b[0m mặc định Full HD 1920x1080 (full màn hình, tràn viền, không bị viền trắng).\n' +
-    '   \x1b[36mPreset:\x1b[0m   --fullhd (1920x1080, mặc định) | --desktop (1600x900) | --laptop (1366x768)\n' +
-    '   \x1b[36mTự do:\x1b[0m    --viewport <w,h>   (vd: --viewport 1600,900)\n' +
-    '   \x1b[36m.env:\x1b[0m     CODEGEN_VIEWPORT=1920,1080   (mặc định 1920,1080 nếu bỏ trống)\n' +
-    '   Example: npm run record:ticket <KEY> -- --desktop\n');
+  console.log('\n\x1b[33m🖥️  Viewport (tự động):[0m tự động khớp 100% theo màn hình thật của máy (vd 2K 2560x1440, Full HD 1920x1080).\n' +
+    '   [36mPreset:[0m   --2k (2560x1440) | --fullhd (1920x1080) | --desktop (1600x900) | --laptop (1366x768)\n' +
+    '   [36mTự do:[0m    --viewport <w,h>   (vd: --viewport 2560,1440)\n' +
+    '   [36m.env:[0m     CODEGEN_VIEWPORT=auto   (để trống hoặc auto = tự động full màn hình máy bạn)\n' +
+    '   Example: npm run record:ticket <KEY> -- --2k\n');
   process.exit(1);
 }
 
@@ -128,23 +146,28 @@ if (urlFlagIndex !== -1 && argv[urlFlagIndex + 1]) {
   startUrl = startUrl.replace(/\/+$/, '') + (extraPath.startsWith('/') ? extraPath : `/${extraPath}`);
 }
 
-// Viewport resolution for codegen. Default to Full HD resolution (1920x1080)
-// so the recorder opens full-screen / tràn viền on standard 1080p monitors
-// without awkward letterboxing or blank borders (avoiding Playwright's cramped
-// 1280x720 default).
-//
 // Convenience preset flags let the Tester choose another fixed size when needed:
 const VIEWPORT_PRESETS = {
-  '--laptop': '1366,768',
-  '--desktop': '1600,900',
+  '--2k': '2560,1440',
+  '--qhd': '2560,1440',
   '--fullhd': '1920,1080',
+  '--desktop': '1600,900',
+  '--laptop': '1366,768',
 };
+
+// Viewport resolution for codegen. Automatically detects the machine's primary
+// screen resolution (e.g. 2560x1440 on 2K displays or 1920x1080 on Full HD) so the
+// recorder opens 100% full-screen / borderless without awkward letterboxing or blank
+// margins. Fallback to 1920x1080 if screen detection is unavailable (e.g. CI / headless).
+//
 // Override precedence (lowest -> highest):
-//   1. Default: '1920,1080' (Full HD tràn viền)
-//   2. CODEGEN_VIEWPORT env var
-//   3. Preset flag: --laptop | --desktop | --fullhd
+//   1. Auto-detected primary screen resolution (fallback 1920x1080)
+//   2. CODEGEN_VIEWPORT env var (if not 'auto' and not empty)
+//   3. Preset flag: --2k | --fullhd | --desktop | --laptop
 //   4. Free-form flag: --viewport <w,h>
-let viewportSize = process.env.CODEGEN_VIEWPORT || '1920,1080';
+let viewportSize = process.env.CODEGEN_VIEWPORT && process.env.CODEGEN_VIEWPORT !== 'auto'
+  ? process.env.CODEGEN_VIEWPORT
+  : (detectScreenResolution() || '1920,1080');
 for (const [flag, preset] of Object.entries(VIEWPORT_PRESETS)) {
   if (argv.includes(flag)) {
     viewportSize = preset;
@@ -178,7 +201,10 @@ console.log(`======================================================\n`);
 console.log(`🌐 BASE_URL:        ${startUrl}`);
 console.log(`🔐 Auth session:    ${hasAuthStorage ? '.auth/user.json (preloaded)' : '(none -- will start logged out)'}`);
 console.log(`📄 Output file:     ${relRecordingPath}`);
-console.log(`🖥️  Viewport:        ${viewportSize.replace(',', ' x ')}`);
+const isAuto = (!process.env.CODEGEN_VIEWPORT || process.env.CODEGEN_VIEWPORT === 'auto') &&
+  !Object.keys(VIEWPORT_PRESETS).some((f) => argv.includes(f)) &&
+  viewportFlagIndex === -1;
+console.log(`🖥️  Viewport:        ${viewportSize.replace(',', ' x ')}${isAuto ? ' (Tự động full theo màn hình máy bạn)' : ''}`);
 console.log(`\n👉 A browser window will open. Perform the real flow described in the ticket, then close the`);
 console.log(`   Playwright Inspector window to finish -- the recorded script is saved automatically.\n`);
 

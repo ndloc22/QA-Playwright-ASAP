@@ -1,7 +1,26 @@
 import { defineConfig, devices } from '@playwright/test';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
+
+/*
+ * 🔐 Tái sử dụng phiên đăng nhập (storageState).
+ * `.auth/user.json` được lưu tự động sau lần đăng nhập SSO/MFA thủ công đầu tiên
+ * (xem tests/support/interactive-auth.ts). Nếu file tồn tại thì mọi test dùng lại
+ * để KHÔNG phải đăng nhập lại mỗi lần.
+ *
+ * INTERACTIVE_SSO=1 (do `npm run test:function` set) bật thêm "setup" project chạy
+ * hand-off đăng nhập thủ công 1 lần trước khi các test bắt đầu (chi tiết bên dưới).
+ */
+const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
+const INTERACTIVE_SSO = process.env.INTERACTIVE_SSO === '1';
+const hasAuthState = fs.existsSync(AUTH_FILE);
+// Dùng storageState khi đã có file, HOẶC khi bật interactive (setup sẽ tạo file
+// trước khi test chạy nhờ project dependency).
+const storageState = hasAuthState || INTERACTIVE_SSO ? AUTH_FILE : undefined;
+
 
 /*
  * Tự động phát hiện khi baseURL trỏ tới server thật (real/remote server).
@@ -100,6 +119,23 @@ export default defineConfig({
         },
       }),
   projects: [
+    // 🔐 Setup project: chỉ bật khi INTERACTIVE_SSO=1 (npm run test:function).
+    // Chạy hand-off đăng nhập SSO/MFA thủ công 1 lần rồi lưu .auth/user.json.
+    ...(INTERACTIVE_SSO
+      ? [
+          {
+            name: 'setup',
+            testDir: './tests/support',
+            testMatch: /auth\.setup\.ts/,
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1920, height: 1080 },
+              // Setup phải bắt đầu ở trạng thái CHƯA đăng nhập để bắt được form SSO.
+              storageState: undefined,
+            },
+          },
+        ]
+      : []),
     {
       name: 'chromium',
       use: {
@@ -107,7 +143,11 @@ export default defineConfig({
         // devices['Desktop Chrome'] mặc định 1280x720 và sẽ ghi đè viewport global,
         // nên set lại 1920x1080 ngay sau spread để video/giao diện đạt Full-HD.
         viewport: { width: 1920, height: 1080 },
+        // Tái sử dụng phiên đã đăng nhập (nếu có / nếu setup vừa tạo).
+        storageState,
       },
+      // Chỉ phụ thuộc "setup" khi bật interactive để `npm test` thường không bị chặn.
+      ...(INTERACTIVE_SSO ? { dependencies: ['setup'] } : {}),
     },
     // Bat them Firefox va WebKit neu can test da trinh duyet:
     // {

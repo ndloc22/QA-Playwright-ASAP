@@ -1,0 +1,129 @@
+/**
+ * ▶️ E.ON Run Function — chạy testcase TRỰC TIẾP (có UI) + hand-off SSO/MFA thủ công.
+ *
+ * "Sau khi record, làm sao RUN LẠI testcase TRỰC TIẾP (không chạy ngầm), đồng thời
+ *  có step tự dừng cho Tester tương tác để thực thi authen vì ASAP dính SSO."
+ *
+ * Lệnh này:
+ *   - Chạy spec của 1 function ở chế độ --headed (HIỂN THỊ trình duyệt, KHÔNG chạy ngầm).
+ *   - Bật INTERACTIVE_SSO=1 → Playwright chạy "setup" project (tests/support/auth.setup.ts):
+ *       nếu gặp trang Microsoft SSO/MFA, DỪNG chờ Tester đăng nhập rồi lưu .auth/user.json.
+ *   - Sau đó chạy các bước của testcase, tái sử dụng phiên đã đăng nhập.
+ *
+ * Usage:
+ *   npm run test:function SEARCH_TELECONTROL
+ *   npm run test:function SEARCH_TELECONTROL -- -g "01"        # lọc 1 testcase
+ *   npm run test:function SEARCH_TELECONTROL -- --debug        # debug từng bước
+ *   SSO_TIMEOUT=180000 npm run test:function SEARCH_TELECONTROL  # nới thời gian chờ SSO
+ */
+
+const path = require('path');
+const fs = require('fs');
+const { spawnSync } = require('child_process');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const IS_WINDOWS = process.platform === 'win32';
+const ROOT_DIR = path.join(__dirname, '..');
+
+function parseKey(arg) {
+  if (!arg) return null;
+  let value = String(arg).trim();
+  if (!value) return null;
+  value = value.split(/[\\/]/).pop().replace(/\.spec\.ts$/i, '').replace(/\.md$/i, '');
+  value = value.replace(/^TC-/i, '');
+  const match = value.match(/([A-Za-z0-9_-]+)/);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function resolveWindowsBinary(command) {
+  if (!IS_WINDOWS) return command;
+  const pathExt = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  const pathDirs = (process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean);
+  for (const dir of pathDirs) {
+    for (const ext of pathExt) {
+      const candidate = path.join(dir, `${command}${ext}`);
+      if (fs.existsSync(candidate)) return `${command}${ext}`;
+    }
+  }
+  return command;
+}
+
+function quoteForCmd(value) {
+  const str = String(value);
+  if (str === '') return '""';
+  if (!/[\s"&|<>^%!]/.test(str)) return str;
+  return `"${str.replace(/"/g, '\\"')}"`;
+}
+
+function safeSpawnSync(command, args, options = {}) {
+  if (IS_WINDOWS) {
+    const commandLine = [quoteForCmd(command), ...args.map(quoteForCmd)].join(' ');
+    return spawnSync(commandLine, { ...options, shell: true });
+  }
+  return spawnSync(command, args, { ...options, shell: false });
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+  const positional = argv.find((a) => !a.startsWith('-'));
+  const passthrough = argv.filter((a) => a !== positional);
+  const key = parseKey(positional);
+
+  if (!key) {
+    console.log('\n\x1b[33m⚡ Usage: npm run test:function <FUNCTION_NAME> [-- <playwright args>]\x1b[0m');
+    console.log('   Example: npm run test:function SEARCH_TELECONTROL');
+    console.log('            npm run test:function SEARCH_TELECONTROL -- -g "01" --debug\n');
+    process.exit(1);
+  }
+
+  // Ưu tiên spec trong nhóm functions/, fallback về spec phẳng.
+  const groupedRel = `tests/e2e/functions/TC-${key}.spec.ts`;
+  const flatRel = `tests/e2e/TC-${key}.spec.ts`;
+  const specRel = fs.existsSync(path.join(ROOT_DIR, groupedRel))
+    ? groupedRel
+    : fs.existsSync(path.join(ROOT_DIR, flatRel))
+      ? flatRel
+      : null;
+
+  if (!specRel) {
+    console.error(`\n\x1b[31m❌ Không thấy spec cho "${key}" (${groupedRel}).\x1b[0m`);
+    console.error(`   → Sinh spec trước: npm run sync-specs ${key}  rồi  npm run md-to-spec ${key}\n`);
+    process.exit(1);
+  }
+
+  console.log('======================================================');
+  console.log(` ▶️  RUN TRỰC TIẾP (headed) + SSO hand-off: ${key}`);
+  console.log('======================================================');
+  console.log(`📄 Spec:      ${specRel}`);
+  console.log(`🔐 SSO:       INTERACTIVE_SSO=1 (dừng chờ đăng nhập thủ công nếu cần)`);
+  console.log(`⏱️  SSO chờ:  ${Math.round((Number(process.env.SSO_TIMEOUT) || 120000) / 1000)}s (đổi bằng SSO_TIMEOUT ms)`);
+  console.log(`🖥️  Chế độ:   --headed (hiển thị trình duyệt, KHÔNG chạy ngầm)`);
+  if (passthrough.length) console.log(`➕ Thêm cờ:   ${passthrough.join(' ')}`);
+  console.log('');
+
+  const npxBin = resolveWindowsBinary('npx');
+  const args = [
+    'playwright',
+    'test',
+    specRel,
+    '--headed',
+    '--project=chromium',
+    ...passthrough,
+  ];
+
+  const result = safeSpawnSync(npxBin, args, {
+    stdio: 'inherit',
+    cwd: ROOT_DIR,
+    env: { ...process.env, INTERACTIVE_SSO: '1' },
+  });
+
+  if (result.error) {
+    console.error(`\n\x1b[31m❌ Không chạy được Playwright: ${result.error.message}\x1b[0m\n`);
+    process.exit(1);
+  }
+  process.exit(result.status == null ? 1 : result.status);
+}
+
+main();

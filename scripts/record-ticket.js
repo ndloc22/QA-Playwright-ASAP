@@ -111,11 +111,11 @@ if (!key) {
   console.log('      Example: npm run record:ticket KFWT-1161');
   console.log('   \x1b[36mNhóm 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
   console.log('      Example: npm run record:function SEARCH_TELECONTROL');
-  console.log('\n\x1b[33m🖥️  Viewport (tùy chọn):\x1b[0m mặc định Auto (tự khớp màn hình — hãy Maximize cửa sổ để dùng trọn không gian, không bị che nút bấm).');
-  console.log('   \x1b[36mPreset:\x1b[0m   --laptop (1366x768) | --desktop (1600x900) | --fullhd (1920x1080)');
-  console.log('   \x1b[36mTự do:\x1b[0m    --viewport <w,h>   (vd: --viewport 1920,1080)');
-  console.log('   \x1b[36m.env:\x1b[0m     CODEGEN_VIEWPORT=1600,900   (bỏ trống = Auto)');
-  console.log('   Example: npm run record:ticket ASAP-101 -- --desktop\n');
+  console.log('\n\x1b[33m🖥️  Viewport (tùy chọn):\x1b[0m mặc định Desktop 1600x900 (rộng rãi, phủ kín màn hình, không bị viền trắng).\n' +
+    '   \x1b[36mPreset:\x1b[0m   --desktop (1600x900, mặc định) | --fullhd (1920x1080) | --laptop (1366x768)\n' +
+    '   \x1b[36mTự do:\x1b[0m    --viewport <w,h>   (vd: --viewport 1920,1080)\n' +
+    '   \x1b[36m.env:\x1b[0m     CODEGEN_VIEWPORT=1600,900   (mặc định 1600,900 nếu bỏ trống)\n' +
+    '   Example: npm run record:ticket <KEY> -- --fullhd\n');
   process.exit(1);
 }
 
@@ -128,27 +128,22 @@ if (urlFlagIndex !== -1 && argv[urlFlagIndex + 1]) {
   startUrl = startUrl.replace(/\/+$/, '') + (extraPath.startsWith('/') ? extraPath : `/${extraPath}`);
 }
 
-// Viewport resolution for codegen. By DEFAULT we leave the viewport UNSET
-// (`null`) so Playwright Codegen matches the real OS window size -- the Tester
-// can simply Maximize the recorder window to use 100% of the screen without
-// ever clipping the layout or the action buttons at the bottom (a common issue
-// on 1080p screens or laptops running Windows Scaling at 125%-150%).
+// Viewport resolution for codegen. Default to a spacious Desktop resolution (1600x900)
+// so Portal / PrimeFaces components render comfortably without letterboxing (avoiding
+// Playwright's cramped 1280x720 default), while still fitting standard 1080p screens.
 //
-// Convenience preset flags let the Tester pin a fixed size when needed:
+// Convenience preset flags let the Tester choose another fixed size when needed:
 const VIEWPORT_PRESETS = {
   '--laptop': '1366,768',
   '--desktop': '1600,900',
   '--fullhd': '1920,1080',
 };
 // Override precedence (lowest -> highest):
-//   1. Default: null  => Auto (match OS window / Maximize)
+//   1. Default: '1600,900' (Spacious Desktop)
 //   2. CODEGEN_VIEWPORT env var
 //   3. Preset flag: --laptop | --desktop | --fullhd
 //   4. Free-form flag: --viewport <w,h>
-let viewportSize = null;
-if (process.env.CODEGEN_VIEWPORT) {
-  viewportSize = process.env.CODEGEN_VIEWPORT;
-}
+let viewportSize = process.env.CODEGEN_VIEWPORT || '1600,900';
 for (const [flag, preset] of Object.entries(VIEWPORT_PRESETS)) {
   if (argv.includes(flag)) {
     viewportSize = preset;
@@ -157,7 +152,6 @@ for (const [flag, preset] of Object.entries(VIEWPORT_PRESETS)) {
 if (viewportFlagIndex !== -1 && argv[viewportFlagIndex + 1]) {
   viewportSize = argv[viewportFlagIndex + 1];
 }
-// Playwright expects `--viewport-size=<width,height>` with no spaces.
 if (viewportSize) {
   viewportSize = viewportSize.replace(/\s+/g, '');
 }
@@ -183,7 +177,7 @@ console.log(`======================================================\n`);
 console.log(`🌐 BASE_URL:        ${startUrl}`);
 console.log(`🔐 Auth session:    ${hasAuthStorage ? '.auth/user.json (preloaded)' : '(none -- will start logged out)'}`);
 console.log(`📄 Output file:     ${relRecordingPath}`);
-console.log(`🖥️  Viewport:        ${viewportSize ? viewportSize.replace(',', ' x ') : 'Auto (Tự khớp màn hình / Maximize)'}`);
+console.log(`🖥️  Viewport:        ${viewportSize.replace(',', ' x ')}`);
 console.log(`\n👉 A browser window will open. Perform the real flow described in the ticket, then close the`);
 console.log(`   Playwright Inspector window to finish -- the recorded script is saved automatically.\n`);
 
@@ -192,13 +186,9 @@ const codegenArgs = [
   'playwright',
   'codegen',
   '--target=playwright-test',
+  `--viewport-size=${viewportSize}`,
   `--output=${relRecordingPath}`,
 ];
-// Only pin a fixed viewport when one was explicitly requested; otherwise let
-// codegen inherit the OS window size (Auto / Maximize).
-if (viewportSize) {
-  codegenArgs.splice(3, 0, `--viewport-size=${viewportSize}`);
-}
 if (hasAuthStorage) {
   codegenArgs.push(`--load-storage=${path.relative(ROOT_DIR, AUTH_STORAGE_STATE).split(path.sep).join('/')}`);
 }

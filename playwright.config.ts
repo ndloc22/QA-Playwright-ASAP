@@ -131,7 +131,7 @@ export default defineConfig({
               ...devices['Desktop Chrome'],
               viewport: { width: 1920, height: 1080 },
               // Setup phải bắt đầu ở trạng thái CHƯA đăng nhập để bắt được form SSO.
-              storageState: undefined,
+              storageState: hasAuthState ? AUTH_FILE : undefined,
             },
           },
         ]

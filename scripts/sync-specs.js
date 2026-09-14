@@ -833,6 +833,17 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
     lines.push('  }');
   }
 
+  // Helper: waitForAjax
+  lines.push('');
+  lines.push('  /**');
+  lines.push('   * Wait for Axon Ivy / PrimeFaces global AJAX loading overlay to settle.');
+  lines.push('   * Safe to call anytime; resolves immediately if no loader is active.');
+  lines.push('   */');
+  lines.push('  async waitForAjax(timeout: number = 20000): Promise<void> {');
+  lines.push("    const indicator = this.page.locator('.ajax-status-position, [id*=\"ajax-indicator-ajax-indicator\"]').first();");
+  lines.push("    await indicator.waitFor({ state: 'hidden', timeout }).catch(() => {});");
+  lines.push('  }');
+
   let methodCount = 0;
   for (const l of locators) {
     const actions = Array.from(l.actions).sort();
@@ -845,6 +856,10 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
       const callArg = meta.param ? meta.param.name : '';
       lines.push('');
       lines.push(`  async ${methodName}(${param}): Promise<void> {`);
+      if (action === 'click') {
+        lines.push("    const ajaxIndicator = this.page.locator('.ajax-status-position, [id*=\"ajax-indicator-ajax-indicator\"]').first();");
+        lines.push("    await ajaxIndicator.waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});");
+      }
       if (action === 'click' && l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
         lines.push(`    const widget = this.page.frameLocator(${tsString(l.frameSelector)});`);
         lines.push("    for (const parent of ['Start', 'Governance', 'Administration']) {");

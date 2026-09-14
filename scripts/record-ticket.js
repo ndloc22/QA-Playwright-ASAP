@@ -267,9 +267,52 @@ if (fs.existsSync(fullRecordingPath)) {
   }
 }
 if (FUNCTION_MODE) {
-  console.log(`\n[NEXT] Next step -- package the Page Object + starter spec into the functions/ group:`);
-  console.log(`   npm run sync-specs ${key}`);
-  console.log(`   Then run it: npx playwright test tests/e2e/functions/TC-${key}.spec.ts\n`);
+  // -----------------------------------------------------------------
+  // AUTO-HOOK (Function Mode): Automatically run sync-specs + verify
+  // test after the recorder closes. Tester does NOT need to type any
+  // additional commands -- recording -> Page Object -> Spec -> Test
+  // all happens in a single uninterrupted pipeline.
+  // -----------------------------------------------------------------
+  const nodeBin = process.execPath;
+  const syncSpecsScript = path.join(__dirname, 'sync-specs.js');
+  const runFunctionScript = path.join(__dirname, 'run-function.js');
+
+  console.log(`\n[AUTO] Starting automatic sync-specs for: ${key}`);
+  console.log(`   -> Generating Page Object and Test Spec from recording...`);
+
+  const syncResult = safeSpawnSync(nodeBin, [syncSpecsScript, key], {
+    stdio: 'inherit',
+    cwd: ROOT_DIR,
+  });
+
+  if (syncResult.error || syncResult.status !== 0) {
+    console.warn(`\n[WARN] sync-specs exited with code ${syncResult.status ?? 'N/A'}. Skipping auto-verify step.`);
+    console.warn(`   -> Run manually: npm run sync-specs ${key}`);
+    process.exit(syncResult.status ?? 1);
+  }
+
+  console.log(`\n[AUTO] sync-specs completed. Starting automatic verify run (headed)...`);
+
+  const runResult = safeSpawnSync(nodeBin, [runFunctionScript, key], {
+    stdio: 'inherit',
+    cwd: ROOT_DIR,
+    env: { ...process.env, INTERACTIVE_SSO: '1' },
+  });
+
+  const runPassed = !runResult.error && runResult.status === 0;
+  console.log('\n======================================================');
+  console.log(` [DONE] Function: ${key}`);
+  console.log('======================================================');
+  console.log(`  * Recording:   tests/recordings/functions/${key}.recording.ts`);
+  console.log(`  * Page Object: tests/pages/functions/...Page.ts`);
+  console.log(`  * Test Spec:   tests/e2e/functions/TC-${key}.spec.ts`);
+  if (runPassed) {
+    console.log(`  * Verify:      [PASSED] Function verified end-to-end.`);
+  } else {
+    console.log(`  * Verify:      [WARN] Verify run did not pass (exit ${runResult.status ?? 'N/A'}).`);
+    console.log(`     -> Check the headed browser output, or re-run: npm run test:function ${key}`);
+  }
+  console.log('======================================================\n');
 } else {
   console.log(`\n[NEXT] Next step -- regenerate the Page Object + Test Spec grounded in this recording:`);
   console.log(`   npm run regenerate ${key}`);

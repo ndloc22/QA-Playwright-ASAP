@@ -1,0 +1,13 @@
+{
+  "_comment": "Post-Deploy Smoke Suite configuration. Edit this file to control which functions are verified after a QA deploy.",
+  "crawlMenus": true,
+  "stopOnFailure": false,
+  "sequence": [
+    "CREATE_RISK_REQUEST"
+  ],
+  "_notes": {
+    "crawlMenus": "Set to true to automatically crawl all top-level menus and detect dead links / error dialogs before running functions.",
+    "stopOnFailure": "Set to true to abort the entire suite on first failure. Default false = run all and report at the end.",
+    "sequence": "List function NAMEs in the order they should be verified. Each NAME must match a recorded function in tests/e2e/functions/TC-<NAME>.spec.ts. Add more names here to include additional flows -- no code change required."
+  }
+}

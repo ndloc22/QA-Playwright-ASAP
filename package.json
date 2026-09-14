@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "Playwright Automation & 1-Click Workflow for ASAP QA Testers powered by GitHub Copilot",
   "scripts": {
+    "login": "node scripts/login.js",
+    "login:refresh": "node -e \"const fs=require('fs'); const f='.auth/user.json'; if(fs.existsSync(f)){fs.unlinkSync(f);console.log('Old session removed. Run: npm run login');} else {console.log('No existing session.');}\" && node scripts/login.js",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",

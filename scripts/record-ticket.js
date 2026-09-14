@@ -1,10 +1,10 @@
-/**
- * 🎥 E.ON Grounding Recorder: Playwright codegen scoped to a Jira ticket key
+﻿/**
+ * ðŸŽ¥ E.ON Grounding Recorder: Playwright codegen scoped to a Jira ticket key
  * Usage:
  *   npm run record:ticket KFWT-1161
  *   npm run record:ticket -- KFWT-1161 --url /some/deep/link
  *
- * What this does (answers "làm sao để bước regenerate tự tham chiếu codegen?"):
+ * What this does (answers "lÃ m sao Ä‘á»ƒ bÆ°á»›c regenerate tá»± tham chiáº¿u codegen?"):
  *   1. Loads BASE_URL from .env (same source of truth as playwright.config.ts).
  *   2. Loads the already-authenticated browser session from .auth/user.json
  *      (the storageState captured by the Tester's normal login flow), so the
@@ -101,10 +101,10 @@ function safeSpawnSync(command, args, options = {}) {
 }
 
 const argv = process.argv.slice(2);
-// Nhóm 2 (Function/Module) mode: `npm run record:function <NAME>` (which passes
+// NhÃ³m 2 (Function/Module) mode: `npm run record:function <NAME>` (which passes
 // --function) OR being invoked via the record:function lifecycle event. In this
 // mode the recording is grouped under tests/recordings/functions/ so it never
-// collides with Nhóm 1 (Jira Ticket) recordings, and every downstream tool
+// collides with NhÃ³m 1 (Jira Ticket) recordings, and every downstream tool
 // (sync-specs.js, auto-test.js, Playwright) auto-detects that grouping.
 const FUNCTION_MODE =
   argv.includes('--function') || process.env.npm_lifecycle_event === 'record:function';
@@ -124,15 +124,15 @@ const target = argv.find(
 const key = parseTicketKey(target);
 
 if (!key) {
-  console.log('\n\x1b[33m⚡ Usage:\x1b[0m');
-  console.log('   \x1b[36mNhóm 1 (Jira Ticket):\x1b[0m  npm run record:ticket <TICKET_KEY> [-- --url <path>]');
+  console.log('\n\x1b[33mâš¡ Usage:\x1b[0m');
+  console.log('   \x1b[36mNhÃ³m 1 (Jira Ticket):\x1b[0m  npm run record:ticket <TICKET_KEY> [-- --url <path>]');
   console.log('      Example: npm run record:ticket KFWT-1161');
-  console.log('   \x1b[36mNhóm 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
+  console.log('   \x1b[36mNhÃ³m 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
   console.log('      Example: npm run record:function SEARCH_TELECONTROL');
-  console.log('\n\x1b[33m🖥️  Viewport (tự động):[0m tự động khớp 100% theo màn hình thật của máy (vd 2K 2560x1440, Full HD 1920x1080).\n' +
+  console.log('\n\x1b[33mðŸ–¥ï¸  Viewport (tá»± Ä‘á»™ng):[0m tá»± Ä‘á»™ng khá»›p 100% theo mÃ n hÃ¬nh tháº­t cá»§a mÃ¡y (vd 2K 2560x1440, Full HD 1920x1080).\n' +
     '   [36mPreset:[0m   --2k (2560x1440) | --fullhd (1920x1080) | --desktop (1600x900) | --laptop (1366x768)\n' +
-    '   [36mTự do:[0m    --viewport <w,h>   (vd: --viewport 2560,1440)\n' +
-    '   [36m.env:[0m     CODEGEN_VIEWPORT=auto   (để trống hoặc auto = tự động full màn hình máy bạn)\n' +
+    '   [36mTá»± do:[0m    --viewport <w,h>   (vd: --viewport 2560,1440)\n' +
+    '   [36m.env:[0m     CODEGEN_VIEWPORT=auto   (Ä‘á»ƒ trá»‘ng hoáº·c auto = tá»± Ä‘á»™ng full mÃ n hÃ¬nh mÃ¡y báº¡n)\n' +
     '   Example: npm run record:ticket <KEY> -- --2k\n');
   process.exit(1);
 }
@@ -191,21 +191,21 @@ const fullRecordingPath = path.join(TARGET_RECORDINGS_DIR, `${key}.recording.ts`
 
 const hasAuthStorage = fs.existsSync(AUTH_STORAGE_STATE);
 if (!hasAuthStorage) {
-  console.warn(`\x1b[33m⚠️  .auth/user.json not found -- codegen will start WITHOUT a preloaded login session.\x1b[0m`);
+  console.warn(`\x1b[33mâš ï¸  .auth/user.json not found -- codegen will start WITHOUT a preloaded login session.\x1b[0m`);
   console.warn(`   -> If the app requires login, sign in manually inside the recorder window, or capture a\n      storageState first (e.g. via Playwright's authentication docs) and save it to .auth/user.json.`);
 }
 
 console.log(`\n======================================================`);
-console.log(`🎥 RECORDING ${MODE_LABEL} GROUNDING TRUTH FOR \x1b[36m${key}\x1b[0m`);
+console.log(`ðŸŽ¥ RECORDING ${MODE_LABEL} GROUNDING TRUTH FOR \x1b[36m${key}\x1b[0m`);
 console.log(`======================================================\n`);
-console.log(`🌐 BASE_URL:        ${startUrl}`);
-console.log(`🔐 Auth session:    ${hasAuthStorage ? '.auth/user.json (preloaded)' : '(none -- will start logged out)'}`);
-console.log(`📄 Output file:     ${relRecordingPath}`);
+console.log(`ðŸŒ BASE_URL:        ${startUrl}`);
+console.log(`ðŸ” Auth session:    ${hasAuthStorage ? '.auth/user.json (preloaded)' : '(none -- will start logged out)'}`);
+console.log(`ðŸ“„ Output file:     ${relRecordingPath}`);
 const isAuto = (!process.env.CODEGEN_VIEWPORT || process.env.CODEGEN_VIEWPORT === 'auto') &&
   !Object.keys(VIEWPORT_PRESETS).some((f) => argv.includes(f)) &&
   viewportFlagIndex === -1;
-console.log(`🖥️  Viewport:        ${viewportSize.replace(',', ' x ')}${isAuto ? ' (Tự động full theo màn hình máy bạn)' : ''}`);
-console.log(`\n👉 A browser window will open. Perform the real flow described in the ticket, then close the`);
+console.log(`ðŸ–¥ï¸  Viewport:        ${viewportSize.replace(',', ' x ')}${isAuto ? ' (Tá»± Ä‘á»™ng full theo mÃ n hÃ¬nh mÃ¡y báº¡n)' : ''}`);
+console.log(`\nðŸ‘‰ A browser window will open. Perform the real flow described in the ticket, then close the`);
 console.log(`   Playwright Inspector window to finish -- the recorded script is saved automatically.\n`);
 
 const npxBin = resolveWindowsBinary('npx');
@@ -227,17 +227,17 @@ const result = safeSpawnSync(npxBin, codegenArgs, {
 });
 
 if (result.error) {
-  console.error(`\n\x1b[31m❌ Could not start Playwright codegen: ${result.error.message}\x1b[0m\n`);
+  console.error(`\n\x1b[31mâŒ Could not start Playwright codegen: ${result.error.message}\x1b[0m\n`);
   process.exit(1);
 }
 
 if (!fs.existsSync(fullRecordingPath)) {
-  console.warn(`\n\x1b[33m⚠️  Recorder closed but ${relRecordingPath} was not created (no actions recorded?).\x1b[0m`);
+  console.warn(`\n\x1b[33mâš ï¸  Recorder closed but ${relRecordingPath} was not created (no actions recorded?).\x1b[0m`);
   console.warn(`   -> Run "npm run ${RECORD_CMD} ${key}" again and perform at least one action before closing.\n`);
   process.exit(1);
 }
 
-console.log(`\n\x1b[32m✅ Recording saved: ${relRecordingPath}\x1b[0m`);
+console.log(`\n\x1b[32mâœ… Recording saved: ${relRecordingPath}\x1b[0m`);
 
 // Warn (but don't fail) if the recorder was closed without any real interaction.
 // Playwright codegen always writes the initial page.goto(...), so a file alone
@@ -248,17 +248,30 @@ const recordedSource = fs.readFileSync(fullRecordingPath, 'utf-8');
 const INTERACTION_RE =
   /\.(click|fill|press|check|uncheck|selectOption|setInputFiles|type|dblclick|tap|hover|dragTo|focus)\s*\(|getBy(Role|Label|Placeholder|Text|TestId|Title|AltText)\s*\(/;
 if (!INTERACTION_RE.test(recordedSource)) {
-  console.warn(`\n\x1b[33m⚠️  This recording has no recorded interactions (only the initial navigation).\x1b[0m`);
+  console.warn(`\n\x1b[33mâš ï¸  This recording has no recorded interactions (only the initial navigation).\x1b[0m`);
   console.warn(`   -> regenerate/auto-test will NOT treat it as Grounding Truth and will NOT remove test.fixme() guards.`);
   console.warn(`   -> Re-run "npm run ${RECORD_CMD} ${key}" and click/fill at least one element before closing the recorder.\n`);
 }
 
+
+// --- Auto-save session after recording (if Tester logged in during codegen) ---
+// If .auth/user.json does NOT exist yet but the recording was saved successfully,
+// it means the Tester had to log in manually during codegen. We launch a quick
+// headed browser to capture the storageState from the newly-recorded flow so
+// subsequent record/test runs skip the SSO form entirely.
+if (fs.existsSync(fullRecordingPath)) {
+  const AUTH_STORAGE_STATE_OUT = path.join(ROOT_DIR, '.auth', 'user.json');
+  if (!fs.existsSync(AUTH_STORAGE_STATE_OUT)) {
+    console.log('\x1b[33m💾 Chua co session .auth/user.json — chay `npm run login` de luu session lan sau khoi dang nhap lai.\x1b[0m');
+    console.log('   \x1b[36mGoi y:\x1b[0m  npm run login');
+  }
+}
 if (FUNCTION_MODE) {
-  console.log(`\n➡️  Next step -- package the Page Object + starter spec into the functions/ group:`);
+  console.log(`\nâž¡ï¸  Next step -- package the Page Object + starter spec into the functions/ group:`);
   console.log(`   npm run sync-specs ${key}`);
   console.log(`   Then run it: npx playwright test tests/e2e/functions/TC-${key}.spec.ts\n`);
 } else {
-  console.log(`\n➡️  Next step -- regenerate the Page Object + Test Spec grounded in this recording:`);
+  console.log(`\nâž¡ï¸  Next step -- regenerate the Page Object + Test Spec grounded in this recording:`);
   console.log(`   npm run regenerate ${key}`);
   console.log(`   (or force it as mandatory grounding: npm run auto-test ${key} -- --ground)\n`);
 }

@@ -38,7 +38,7 @@ const timeoutSec = parseInt(getFlag('--timeout', '180'), 10);
 
 let startUrl = (process.env.BASE_URL || '').replace(/\/+$/, '');
 if (!startUrl) {
-  console.error('\n[ERR] Chua thiet lap BASE_URL trong file .env!\n');
+  console.error('\n[ERR] BASE_URL is not set in .env file!\n');
   process.exit(1);
 }
 if (extraPath) {
@@ -63,17 +63,17 @@ function banner(lines) {
 
 async function main() {
   banner([
-    '🔐 DANG NHAP SSO/MFA 1 LAN — LUU SESSION VINH VIEN',
+    '🔐 1-CLICK SSO/MFA LOGIN — SAVE REUSABLE SESSION',
     '',
-    '  Dang mo trang: ' + startUrl,
+    '  Opening URL: ' + startUrl,
     '',
-    '  Neu thay man hinh dang nhap Microsoft:',
-    '    👉 Nhap email + mat khau nhu binh thuong.',
-    '    👉 Duyet xac thuc MFA tren dien thoai (neu co).',
+    '  If Microsoft SSO login appears:',
+    '    👉 Enter your email & password as usual.',
+    '    👉 Approve MFA on your phone (if prompted).',
     '',
-    '  ⏱  Thoi gian cho: ' + timeoutSec + 's  (--timeout de thay doi)',
+    '  ⏱  Timeout: ' + timeoutSec + 's  (use --timeout <sec> to adjust)',
     '',
-    '  Script tu dong luu session sau khi vao duoc he thong.',
+    '  Session will be saved automatically once logged in.',
   ]);
 
   const { chromium } = require('@playwright/test');
@@ -106,10 +106,10 @@ async function main() {
       saved = true;
 
       console.log('');
-      console.log('✅  Dang nhap thanh cong!');
-      console.log('🔐  Session da luu -> .auth/user.json');
+      console.log('✅  Login successful!');
+      console.log('🔐  Session saved -> .auth/user.json');
       console.log('');
-      console.log('  Tu gio cac lenh sau se KHONG hoi lai SSO:');
+      console.log('  Subsequent commands will reuse this session without re-login:');
       console.log('    npm run record:ticket  <KEY>');
       console.log('    npm run record:function <NAME>');
       console.log('    npm run test:function  <NAME>');
@@ -124,8 +124,8 @@ async function main() {
   await browser.close();
 
   if (!saved) {
-    console.error('\n[ERR] Het ' + timeoutSec + 's ma chua quay lai duoc he thong.');
-    console.error('  Tang thoi gian cho bang co --timeout <giay>.\n');
+    console.error('\n[ERR] Timeout after ' + timeoutSec + 's without completing login.');
+    console.error('  Increase timeout via: --timeout <seconds>\n');
     process.exit(1);
   }
 }

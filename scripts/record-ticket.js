@@ -124,15 +124,15 @@ const target = argv.find(
 const key = parseTicketKey(target);
 
 if (!key) {
-  console.log('\n\x1b[33mâš¡ Usage:\x1b[0m');
-  console.log('   \x1b[36mNhÃ³m 1 (Jira Ticket):\x1b[0m  npm run record:ticket <TICKET_KEY> [-- --url <path>]');
+  console.log('\n\x1b[33m⚡ Usage:\x1b[0m');
+  console.log('   \x1b[36mGroup 1 (Jira Ticket):\x1b[0m  npm run record:ticket <TICKET_KEY> [-- --url <path>]');
   console.log('      Example: npm run record:ticket KFWT-1161');
-  console.log('   \x1b[36mNhÃ³m 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
+  console.log('   \x1b[36mGroup 2 (Function):\x1b[0m     npm run record:function <FUNCTION_NAME> [-- --url <path>]');
   console.log('      Example: npm run record:function SEARCH_TELECONTROL');
-  console.log('\n\x1b[33mðŸ–¥ï¸  Viewport (tá»± Ä‘á»™ng):[0m tá»± Ä‘á»™ng khá»›p 100% theo mÃ n hÃ¬nh tháº­t cá»§a mÃ¡y (vd 2K 2560x1440, Full HD 1920x1080).\n' +
-    '   [36mPreset:[0m   --2k (2560x1440) | --fullhd (1920x1080) | --desktop (1600x900) | --laptop (1366x768)\n' +
-    '   [36mTá»± do:[0m    --viewport <w,h>   (vd: --viewport 2560,1440)\n' +
-    '   [36m.env:[0m     CODEGEN_VIEWPORT=auto   (Ä‘á»ƒ trá»‘ng hoáº·c auto = tá»± Ä‘á»™ng full mÃ n hÃ¬nh mÃ¡y báº¡n)\n' +
+  console.log('\n\x1b[33m🖥️  Viewport (automatic):\x1b[0m auto-scaled to 100% of your primary display (e.g. 2K 2560x1440, Full HD 1920x1080).\n' +
+    '   \x1b[36mPresets:\x1b[0m  --2k (2560x1440) | --fullhd (1920x1080) | --desktop (1600x900) | --laptop (1366x768)\n' +
+    '   \x1b[36mCustom:\x1b[0m   --viewport <w,h>   (e.g. --viewport 2560,1440)\n' +
+    '   \x1b[36m.env:\x1b[0m     CODEGEN_VIEWPORT=auto   (leave blank or auto = full resolution of your display)\n' +
     '   Example: npm run record:ticket <KEY> -- --2k\n');
   process.exit(1);
 }
@@ -263,7 +263,7 @@ if (fs.existsSync(fullRecordingPath)) {
   const AUTH_STORAGE_STATE_OUT = path.join(ROOT_DIR, '.auth', 'user.json');
   if (!fs.existsSync(AUTH_STORAGE_STATE_OUT)) {
     console.log('\x1b[33m💾 Chua co session .auth/user.json — chay `npm run login` de luu session lan sau khoi dang nhap lai.\x1b[0m');
-    console.log('   \x1b[36mGoi y:\x1b[0m  npm run login');
+    console.log('   \x1b[36mTip:\x1b[0m  npm run login');
   }
 }
 if (FUNCTION_MODE) {

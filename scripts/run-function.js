@@ -89,17 +89,17 @@ function main() {
 
   if (!specRel) {
     console.error(`\n\x1b[31m❌ Không thấy spec cho "${key}" (${groupedRel}).\x1b[0m`);
-    console.error(`   → Sinh spec trước: npm run sync-specs ${key}  rồi  npm run md-to-spec ${key}\n`);
+    console.error(`   → Generate spec first: npm run sync-specs ${key} then npm run md-to-spec ${key}\n`);
     process.exit(1);
   }
 
   console.log('======================================================');
-  console.log(` ▶️  RUN TRỰC TIẾP (headed) + SSO hand-off: ${key}`);
+  console.log(` ▶️  RUN DIRECT (headed) + SSO hand-off: ${key}`);
   console.log('======================================================');
   console.log(`📄 Spec:      ${specRel}`);
-  console.log(`🔐 SSO:       INTERACTIVE_SSO=1 (dừng chờ đăng nhập thủ công nếu cần)`);
-  console.log(`⏱️  SSO chờ:  ${Math.round((Number(process.env.SSO_TIMEOUT) || 120000) / 1000)}s (đổi bằng SSO_TIMEOUT ms)`);
-  console.log(`🖥️  Chế độ:   --headed (hiển thị trình duyệt, KHÔNG chạy ngầm)`);
+  console.log(`🔐 SSO:       INTERACTIVE_SSO=1 (pauses for manual login if needed)`);
+  console.log(`⏱️  Timeout:   ${Math.round((Number(process.env.SSO_TIMEOUT) || 120000) / 1000)}s (override via SSO_TIMEOUT ms)`);
+  console.log(`🖥️  Mode:      --headed (browser visible, NOT headless)`);
   if (passthrough.length) console.log(`➕ Thêm cờ:   ${passthrough.join(' ')}`);
   console.log('');
 
@@ -120,7 +120,7 @@ function main() {
   });
 
   if (result.error) {
-    console.error(`\n\x1b[31m❌ Không chạy được Playwright: ${result.error.message}\x1b[0m\n`);
+    console.error(`\n\x1b[31m❌ Failed to run Playwright: ${result.error.message}\x1b[0m\n`);
     process.exit(1);
   }
   process.exit(result.status == null ? 1 : result.status);

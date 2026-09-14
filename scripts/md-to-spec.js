@@ -395,20 +395,20 @@ function main() {
   if (!key) {
     console.log('\n\x1b[33m⚡ Usage: npm run md-to-spec <FUNCTION_NAME> [-- --stdout]\x1b[0m');
     console.log('   Example: npm run md-to-spec SEARCH_TELECONTROL');
-    console.log('   (Đọc tests/testcases/functions/TC-<NAME>.md → sinh tests/e2e/functions/TC-<NAME>.spec.ts)\n');
+    console.log('   (Reads tests/testcases/functions/TC-<NAME>.md → generates tests/e2e/functions/TC-<NAME>.spec.ts)\n');
     process.exit(1);
   }
 
   const { mdFull, mdRel, isFunction } = resolveMd(key);
   if (!fs.existsSync(mdFull)) {
-    console.error(`\n\x1b[31m❌ Không thấy kịch bản ${mdRel}.\x1b[0m`);
+    console.error(`\n\x1b[31m❌ Scenario file not found: ${mdRel}\x1b[0m`);
     console.error(`   → Sinh nó trước bằng: npm run sync-specs ${key}\n`);
     process.exit(1);
   }
 
   const pageInfo = resolvePom(key, isFunction);
   if (!fs.existsSync(pageInfo.pomFull)) {
-    console.error(`\n\x1b[31m❌ Không thấy Page Object ${pageInfo.pomRel}.\x1b[0m`);
+    console.error(`\n\x1b[31m❌ Page Object not found: ${pageInfo.pomRel}\x1b[0m`);
     console.error(`   → Sinh nó trước bằng: npm run sync-specs ${key}\n`);
     process.exit(1);
   }
@@ -420,7 +420,7 @@ function main() {
 
   const scenarios = parseScenarios(mdSource, key);
   if (!scenarios.length) {
-    console.error(`\n\x1b[31m❌ Không tìm thấy khối \`\`\`automation\`\`\` nào trong ${mdRel}.\x1b[0m`);
+    console.error(`\n\x1b[31m❌ No \`\`\`automation\`\`\` block found in ${mdRel}\x1b[0m`);
     console.error('   → Thêm 1 khối ```automation ... ``` (xem hướng dẫn trong file .md).\n');
     process.exit(1);
   }
@@ -430,7 +430,7 @@ function main() {
   const code = renderSpec(key, pageInfo, pom.baseFallback, scenarios, scenarioMap, mdRel, errors);
 
   if (errors.length) {
-    console.error(`\n\x1b[31m❌ Có ${errors.length} lỗi khi dịch kịch bản — KHÔNG ghi spec:\x1b[0m`);
+    console.error(`\n\x1b[31m❌ ${errors.length} error(s) translating scenario — spec was NOT written:\x1b[0m`);
     for (const e of errors) console.error(`   • ${e}`);
     console.error('\n   → Sửa các dòng trên trong file .md rồi chạy lại. (Xem method/locator hợp lệ ở thông báo.)\n');
     process.exit(1);
@@ -452,10 +452,10 @@ function main() {
   fs.mkdirSync(specDir, { recursive: true });
   fs.writeFileSync(specFull, code, 'utf-8');
 
-  console.log(`\n\x1b[32m✅ ${existed ? 'Cập nhật' : 'Sinh mới'} spec: ${specRel}\x1b[0m`);
-  console.log(`   Nguồn: ${mdRel}  |  Page Object: ${pageInfo.pomRel}`);
-  console.log(`   Số scenario: ${scenarios.length} (${scenarios.map((s) => s.id).join(', ')})`);
-  console.log('\n➡️  Chạy TRỰC TIẾP (có UI + hỗ trợ can thiệp SSO thủ công):');
+  console.log(`\n\x1b[32m✅ ${existed ? 'Updated' : 'Generated'} spec: ${specRel}\x1b[0m`);
+  console.log(`   Source: ${mdRel}  |  Page Object: ${pageInfo.pomRel}`);
+  console.log(`   Scenarios: ${scenarios.length} (${scenarios.map((s) => s.id).join(', ')})`);
+  console.log('\n➡️  Run DIRECTLY with UI (supports manual SSO hand-off):');
   console.log(`      npm run test:function ${key}\n`);
 }
 

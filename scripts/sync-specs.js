@@ -556,10 +556,14 @@ function extractPomModel(source) {
     const line = raw.trim();
     if (!/^await\s+page\./.test(line)) continue;
 
-    const isFrame = /contentFrame\(\)/.test(line) && /iframe\[title=/.test(line);
+    const isFrame = /contentFrame\(\)/.test(line);
+    let frameSelector = null;
     let portion;
     if (isFrame) {
       const idx = line.lastIndexOf('.contentFrame()');
+      const framePart = line.slice(0, idx);
+      const selMatch = framePart.match(/\.locator\('([^']+)'\)/) || framePart.match(/\.locator\("([^"]+)"\)/);
+      frameSelector = selMatch ? selMatch[1] : (frameTitle ? `iframe[title="${frameTitle}"]` : null);
       portion = line.slice(idx + '.contentFrame()'.length).replace(/^\./, '');
     } else {
       portion = line.replace(/^await\s+page\./, '');
@@ -570,24 +574,31 @@ function extractPomModel(source) {
     if (!parsed) continue;
 
     const rest = portion.slice(parsed.endIdx);
-    const actionMatch = rest.match(
+    let chain = '';
+    const chainMatch = rest.match(/^\.(first|last)\(\)|^\.nth\(\s*\d+\s*\)/);
+    let actionSlice = rest;
+    if (chainMatch) {
+      chain = chainMatch[0];
+      actionSlice = rest.slice(chain.length);
+    }
+    const actionMatch = actionSlice.match(
       /^\.(click|dblclick|fill|type|press|check|uncheck|selectOption|hover|focus|tap)\s*\(/
     );
-    if (!actionMatch) continue; // còn chain (.filter/.nth/.getBy...) -> nhiễu, bỏ qua
+    if (!actionMatch) continue;
 
     const action = actionMatch[1];
-    const argStart = parsed.endIdx + actionMatch[0].length;
+    const argStart = parsed.endIdx + chain.length + actionMatch[0].length;
     const strArg = readStringArg(portion, argStart);
     const value = strArg ? strArg.value : null;
 
-    const comp = parsed.comp;
-    comp.isFrame = isFrame;
+    const comp = { ...parsed.comp, chain, frameSelector, isFrame };
     const sig = [
-      isFrame ? 'F' : 'P',
+      isFrame ? (frameSelector || 'F') : 'P',
       comp.locatorType,
       comp.role || '',
       comp.name || comp.text || '',
-      comp.css || ''
+      comp.css || '',
+      chain
     ].join('|');
 
     let entry = bySig.get(sig);
@@ -645,7 +656,8 @@ function locatorExpr(comp) {
     altText: 'getByAltText'
   };
   const fn = map[t] || 'getByLabel';
-  return `.${fn}(${tsString(comp.name)}${comp.exact ? ', { exact: true }' : ''})`;
+  const baseExpr = `.${fn}(${tsString(comp.name)}${comp.exact ? ', { exact: true }' : ''})`;
+  return comp.chain ? `${baseExpr}${comp.chain}` : baseExpr;
 }
 
 function pascal(member) {
@@ -809,7 +821,15 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   for (const l of frameLocators) {
     lines.push('');
     lines.push(`  get ${l.member}(): Locator {`);
-    lines.push(`    return this.frame${locatorExpr(l)};`);
+    if (l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
+      lines.push(`    return this.page.frameLocator(${tsString(l.frameSelector)})${locatorExpr(l)};`);
+    } else if (l.frameSelector && frameTitle && l.frameSelector === `iframe[title="${frameTitle}"]`) {
+      lines.push(`    return this.frame${locatorExpr(l)};`);
+    } else if (l.frameSelector) {
+      lines.push(`    return this.page.frameLocator(${tsString(l.frameSelector)})${locatorExpr(l)};`);
+    } else {
+      lines.push(`    return this.frame${locatorExpr(l)};`);
+    }
     lines.push('  }');
   }
 
@@ -825,6 +845,12 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
       const callArg = meta.param ? meta.param.name : '';
       lines.push('');
       lines.push(`  async ${methodName}(${param}): Promise<void> {`);
+      if (action === 'click' && l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
+        lines.push(`    const widget = this.page.frameLocator(${tsString(l.frameSelector)});`);
+        lines.push("    for (const parent of ['Start', 'Governance', 'Administration']) {");
+        lines.push("      await widget.getByRole('menuitem', { name: parent }).hover().catch(() => {});");
+        lines.push('    }');
+      }
       lines.push(`    await this.${l.member}.${action}(${callArg});`);
       lines.push('  }');
     }
@@ -1272,29 +1298,27 @@ function reportPom(key, pom) {
   switch (pom.status) {
     case 'created':
       console.log(
-        `📦 ${key}: đóng gói POM chuẩn → ${pom.outRel} (class ${pom.pageClass}: ` +
-          `${pom.locatorCount} locator, ${pom.methodCount} method).`
+        `📦 ${key}: packaged POM → ${pom.outRel} (class ${pom.pageClass}: ${pom.locatorCount} locators, ${pom.methodCount} methods).`
       );
       break;
     case 'overwritten':
       console.log(
-        `📦 ${key}: ghi đè POM (--force-pom) → ${pom.outRel} (class ${pom.pageClass}: ` +
-          `${pom.locatorCount} locator, ${pom.methodCount} method).`
+        `📦 ${key}: overwritten POM (--force-pom) → ${pom.outRel} (class ${pom.pageClass}: ${pom.locatorCount} locators, ${pom.methodCount} methods).`
       );
       break;
     case 'exists':
       console.log(
-        `↩️  ${key}: POM đã tồn tại ${pom.outRel} → giữ nguyên (dùng --force-pom để ghi đè).`
+        `↩️  ${key}: POM already exists at ${pom.outRel} → kept intact (use --force-pom to overwrite).`
       );
       break;
     case 'missing':
-      console.warn(`⚠️  ${key}: không thấy ${pom.recordingRel} → bỏ qua đóng gói POM.`);
+      console.warn(`⚠️  ${key}: recording not found at ${pom.recordingRel} → skipped POM packaging.`);
       break;
     case 'empty':
-      console.warn(`⚠️  ${key}: recording không có thao tác thật → bỏ qua đóng gói POM.`);
+      console.warn(`⚠️  ${key}: recording has no interactions → skipped POM packaging.`);
       break;
     case 'no-locators':
-      console.warn(`⚠️  ${key}: không bóc tách được locator sạch nào → bỏ qua đóng gói POM.`);
+      console.warn(`⚠️  ${key}: no clean locators extracted → skipped POM packaging.`);
       break;
     default:
       console.warn(`⚠️  ${key}: POM status = ${pom.status}`);
@@ -1307,27 +1331,27 @@ function reportPom(key, pom) {
 function reportSpec(key, spec) {
   switch (spec.status) {
     case 'created':
-      console.log(`🧪 ${key}: sinh starter spec → ${spec.specRel} (import ${spec.pageClass}).`);
+      console.log(`🧪 ${key}: generated starter spec → ${spec.specRel} (import ${spec.pageClass}).`);
       break;
     case 'overwritten':
-      console.log(`🧪 ${key}: ghi đè starter spec (--force-spec) → ${spec.specRel}.`);
+      console.log(`🧪 ${key}: overwritten starter spec (--force-spec) → ${spec.specRel}.`);
       break;
     case 'exists':
       console.log(
-        `↩️  ${key}: spec đã tồn tại ${spec.specRel} → giữ nguyên (dùng --force-spec để ghi đè).`
+        `↩️  ${key}: spec already exists at ${spec.specRel} → kept intact (use --force-spec to overwrite).`
       );
       break;
     case 'no-pom':
-      console.warn(`⚠️  ${key}: chưa có Page Object → bỏ qua sinh spec (đừng dùng --no-pom).`);
+      console.warn(`⚠️  ${key}: Page Object not found → skipped spec generation (do not use --no-pom).`);
       break;
     case 'missing':
-      console.warn(`⚠️  ${key}: không thấy ${spec.recordingRel} → bỏ qua sinh spec.`);
+      console.warn(`⚠️  ${key}: recording not found at ${spec.recordingRel} → skipped spec generation.`);
       break;
     case 'empty':
-      console.warn(`⚠️  ${key}: recording không có thao tác thật → bỏ qua sinh spec.`);
+      console.warn(`⚠️  ${key}: recording has no interactions → skipped spec generation.`);
       break;
     case 'no-locators':
-      console.warn(`⚠️  ${key}: không bóc tách được locator sạch nào → bỏ qua sinh spec.`);
+      console.warn(`⚠️  ${key}: no clean locators extracted → skipped spec generation.`);
       break;
     default:
       console.warn(`⚠️  ${key}: spec status = ${spec.status}`);
@@ -1340,22 +1364,22 @@ function reportSpec(key, spec) {
 function reportMd(key, md) {
   switch (md.status) {
     case 'created':
-      console.log(`📝 ${key}: sinh kịch bản BDD → ${md.mdRel} (chỉnh xong chạy: npm run md-to-spec ${key}).`);
+      console.log(`📝 ${key}: generated BDD scenario → ${md.mdRel} (edit and run: npm run md-to-spec ${key}).`);
       break;
     case 'overwritten':
-      console.log(`📝 ${key}: ghi đè kịch bản BDD (--force-md) → ${md.mdRel}.`);
+      console.log(`📝 ${key}: overwritten BDD scenario (--force-md) → ${md.mdRel}.`);
       break;
     case 'exists':
-      console.log(`↩️  ${key}: kịch bản BDD đã tồn tại ${md.mdRel} → giữ nguyên (dùng --force-md để ghi đè).`);
+      console.log(`↩️  ${key}: BDD scenario already exists at ${md.mdRel} → kept intact (use --force-md to overwrite).`);
       break;
     case 'missing':
-      console.warn(`⚠️  ${key}: không thấy ${md.recordingRel} → bỏ qua sinh kịch bản BDD.`);
+      console.warn(`⚠️  ${key}: recording not found at ${md.recordingRel} → skipped BDD scenario generation.`);
       break;
     case 'empty':
-      console.warn(`⚠️  ${key}: recording không có thao tác thật → bỏ qua sinh kịch bản BDD.`);
+      console.warn(`⚠️  ${key}: recording has no interactions → skipped BDD scenario generation.`);
       break;
     case 'no-locators':
-      console.warn(`⚠️  ${key}: không bóc tách được locator sạch nào → bỏ qua sinh kịch bản BDD.`);
+      console.warn(`⚠️  ${key}: no clean locators extracted → skipped BDD scenario generation.`);
       break;
     default:
       console.warn(`⚠️  ${key}: md status = ${md.status}`);
@@ -1397,7 +1421,7 @@ function main() {
   if (all) {
     keys = listRecordingKeys();
     if (keys.length === 0) {
-      console.log('ℹ️  Không tìm thấy recording nào trong tests/recordings/ (bỏ qua).');
+      console.log('ℹ️  No recordings found in tests/recordings/ (skipped).');
       return;
     }
   } else {
@@ -1405,9 +1429,9 @@ function main() {
     if (!key) {
       console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [force] [--no-pom] [--force-pom] [--no-spec] [--force-spec] [--no-md] [--force-md]\x1b[0m');
       console.log('          npm run sync-specs -- --all [force] [--force-pom] [--force-spec] [--force-md]');
-      console.log('   Example: npm run sync-specs ADMINISTRATION          # giữ nguyên file hiện có');
-      console.log('            npm run sync-specs ADMINISTRATION force     # ghi đè cả POM lẫn spec');
-      console.log('            npm run sync-specs:force ADMINISTRATION     # alias 1-click cho force\n');
+      console.log('   Example: npm run sync-specs ADMINISTRATION          # keep existing files');
+      console.log('            npm run sync-specs ADMINISTRATION force     # overwrite POM, spec, and md');
+      console.log('            npm run sync-specs:force ADMINISTRATION     # 1-click alias for force\n');
       process.exit(1);
     }
     keys = [key];
@@ -1422,16 +1446,16 @@ function main() {
       case 'ok':
         changed++;
         totalComponents += result.componentCount || 0;
-        console.log(`✅ ${key}: bóc tách ${result.componentCount} component sống từ ${result.recordingRel}`);
+        console.log(`✅ ${key}: extracted ${result.componentCount} live component(s) from ${result.recordingRel}`);
         break;
       case 'missing':
-        console.warn(`⚠️  ${key}: không thấy ${result.recordingRel} (chạy: npm run record:ticket ${key})`);
+        console.warn(`⚠️  ${key}: recording not found at ${result.recordingRel} (run: npm run record:ticket ${key})`);
         break;
       case 'empty':
-        console.warn(`⚠️  ${key}: recording chỉ có điều hướng, không có thao tác thật → bỏ qua reverse-grounding.`);
+        console.warn(`⚠️  ${key}: recording has no real interactions → skipped reverse-grounding.`);
         break;
       case 'no-components':
-        console.warn(`⚠️  ${key}: không bóc tách được selector nào → bỏ qua.`);
+        console.warn(`⚠️  ${key}: no selectors extracted → skipped.`);
         break;
       default:
         console.warn(`⚠️  ${key}: ${result.status}`);
@@ -1442,18 +1466,18 @@ function main() {
     finalize(spec);
     console.log('');
     console.log('------------------------------------------------------');
-    console.log(`📄 Reverse-Grounding: đã cập nhật ${LIVE_SPEC_REL}`);
-    console.log(`   Sync lần này: ${changed} recording, ${totalComponents} live component reverse-grounded.`);
-    console.log(`   Tổng cộng: ${spec.recordingCount} recording, ${spec.componentCount} live component.`);
-    console.log('   → index.yaml + new-test.prompt.md tự tham chiếu file này khi sinh test ticket mới.');
+    console.log(`📄 Reverse-Grounding: updated ${LIVE_SPEC_REL}`);
+    console.log(`   Sync summary: ${changed} recording(s), ${totalComponents} live component(s) reverse-grounded.`);
+    console.log(`   Total: ${spec.recordingCount} recording(s), ${spec.componentCount} live component(s).`);
+    console.log('   → Automatically referenced by index.yaml & new-test.prompt.md for new tests.');
     console.log('------------------------------------------------------');
   } else {
-    console.log('\nℹ️  Không có thay đổi reverse-grounding nào được ghi.');
+    console.log('\nℹ️  No reverse-grounding changes recorded.');
   }
 
   // ─── Bước 2: tự động đóng gói Page Object Model chuẩn ───
   if (noPom) {
-    console.log('\nℹ️  --no-pom: bỏ qua bước đóng gói Page Object Model.');
+    console.log('\nℹ️  --no-pom: skipped Page Object Model packaging.');
   } else {
     console.log('');
     console.log('------------------------------------------------------');
@@ -1467,14 +1491,14 @@ function main() {
     }
     console.log('------------------------------------------------------');
     console.log(
-      `📦 POM packaging xong: ${pomGenerated}/${keys.length} file được ${forcePom ? 'ghi/ghi đè' : 'sinh mới'}.`
+      `📦 POM packaging complete: ${pomGenerated}/${keys.length} file(s) ${forcePom ? 'created/overwritten' : 'created'}.`
     );
     console.log('------------------------------------------------------');
   }
 
   // ─── Bước 3: sinh starter E2E spec (có guard chống ghi đè) ───
   if (noSpec) {
-    console.log('\nℹ️  --no-spec: bỏ qua bước sinh starter E2E spec.');
+    console.log('\nℹ️  --no-spec: skipped starter E2E spec generation.');
   } else {
     console.log('');
     console.log('------------------------------------------------------');
@@ -1488,20 +1512,20 @@ function main() {
     }
     console.log('------------------------------------------------------');
     console.log(
-      `🧪 Starter spec xong: ${specGenerated}/${keys.length} file được ${forceSpec ? 'ghi/ghi đè' : 'sinh mới'}.`
+      `🧪 Starter spec complete: ${specGenerated}/${keys.length} file(s) ${forceSpec ? 'created/overwritten' : 'created'}.`
     );
     console.log('------------------------------------------------------');
   }
 
   // ─── Bước 4 (MỚI): sinh kịch bản Markdown BDD (nguồn cho md-to-spec) ───
   if (noMd) {
-    console.log('\nℹ️  --no-md: bỏ qua bước sinh kịch bản BDD.\n');
+    console.log('\nℹ️  --no-md: skipped BDD scenario generation.\n');
     return;
   }
 
   console.log('');
   console.log('------------------------------------------------------');
-  console.log(' 📝 Kịch bản BDD: Recording -> tests/testcases/functions/TC-<KEY>.md');
+  console.log(' 📝 BDD Scenario: Recording -> tests/testcases/functions/TC-<KEY>.md');
   console.log('------------------------------------------------------');
   let mdGenerated = 0;
   for (const key of keys) {
@@ -1511,9 +1535,9 @@ function main() {
   }
   console.log('------------------------------------------------------');
   console.log(
-    `📝 Kịch bản BDD xong: ${mdGenerated}/${keys.length} file được ${forceMd ? 'ghi/ghi đè' : 'sinh mới'}.`
+    `📝 BDD scenario complete: ${mdGenerated}/${keys.length} file(s) ${forceMd ? 'created/overwritten' : 'created'}.`
   );
-  console.log('   → Chỉnh file .md rồi chạy: npm run md-to-spec <KEY>  (sinh spec, 0 token).');
+  console.log('   → Edit the .md file then run: npm run md-to-spec <KEY> (0 AI tokens).');
   console.log('------------------------------------------------------\n');
 }
 

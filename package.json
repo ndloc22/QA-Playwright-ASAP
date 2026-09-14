@@ -1,46 +1,49 @@
-{
-  "name": "qa-playwright-asap",
-  "version": "1.0.0",
-  "description": "Playwright Automation & 1-Click Workflow for ASAP QA Testers powered by GitHub Copilot",
-  "scripts": {
-    "login": "node scripts/login.js",
-    "login:refresh": "node -e \"const fs=require('fs'); const f='.auth/user.json'; if(fs.existsSync(f)){fs.unlinkSync(f);console.log('Old session removed. Run: npm run login');} else {console.log('No existing session.');}\" && node scripts/login.js",
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
-    "test:ui": "playwright test --ui",
-    "test:debug": "playwright test --debug",
-    "report": "playwright show-report",
-    "record": "playwright codegen",
-    "record:ticket": "node scripts/record-ticket.js",
-    "record:function": "node scripts/record-ticket.js --function",
-    "md-to-spec": "node scripts/md-to-spec.js",
-    "sync-specs:from-md": "node scripts/md-to-spec.js",
-    "test:function": "node scripts/run-function.js",
-    "fetch-ticket": "node scripts/fetch-jira.js",
-    "create-subtask": "node scripts/create-subtask.js",
-    "generate-codebase-specs": "node scripts/generate-codebase-specs.js",
-    "sync-specs": "node scripts/sync-specs.js",
-    "sync-specs:force": "node scripts/sync-specs.js force",
-    "auto-test": "node scripts/auto-test.js",
-    "regenerate": "node scripts/auto-test.js --regenerate",
-    "clean": "node -e \"const fs=require('fs'); ['test-results','playwright-report','blob-report'].forEach(d => { try { fs.rmSync(d, {recursive:true, force:true}); console.log('Cleaned: ' + d); } catch(e){} })\""
-  },
-  "keywords": [
-    "playwright",
-    "testing",
-    "qa",
-    "automation",
-    "copilot"
-  ],
-  "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "@playwright/test": "^1.50.0",
-    "@types/node": "^22.0.0",
-    "dotenv": "^16.4.7",
-    "typescript": "^5.7.0"
-  },
-  "dependencies": {
-    "js-yaml": "^5.4.1"
-  }
+﻿{
+    "name":  "qa-playwright-asap",
+    "version":  "1.0.0",
+    "description":  "Playwright Automation \u0026 1-Click Workflow for ASAP QA Testers powered by GitHub Copilot",
+    "scripts":  {
+                    "login":  "node scripts/login.js",
+                    "login:refresh":  "node -e \"const fs=require(\u0027fs\u0027); const f=\u0027.auth/user.json\u0027; if(fs.existsSync(f)){fs.unlinkSync(f);console.log(\u0027Old session removed. Run: npm run login\u0027);} else {console.log(\u0027No existing session.\u0027);}\" \u0026\u0026 node scripts/login.js",
+                    "test":  "playwright test",
+                    "test:headed":  "playwright test --headed",
+                    "test:ui":  "playwright test --ui",
+                    "test:debug":  "playwright test --debug",
+                    "report":  "playwright show-report",
+                    "record":  "playwright codegen",
+                    "record:ticket":  "node scripts/record-ticket.js",
+                    "record:function":  "node scripts/record-ticket.js --function",
+                    "md-to-spec":  "node scripts/md-to-spec.js",
+                    "sync-specs:from-md":  "node scripts/md-to-spec.js",
+                    "test:function":  "node scripts/run-function.js",
+                    "fetch-ticket":  "node scripts/fetch-jira.js",
+                    "create-subtask":  "node scripts/create-subtask.js",
+                    "generate-codebase-specs":  "node scripts/generate-codebase-specs.js",
+                    "sync-specs":  "node scripts/sync-specs.js",
+                    "sync-specs:force":  "node scripts/sync-specs.js force",
+                    "auto-test":  "node scripts/auto-test.js",
+                    "regenerate":  "node scripts/auto-test.js --regenerate",
+                    "clean":  "node -e \"const fs=require(\u0027fs\u0027); [\u0027test-results\u0027,\u0027playwright-report\u0027,\u0027blob-report\u0027].forEach(d =\u003e { try { fs.rmSync(d, {recursive:true, force:true}); console.log(\u0027Cleaned: \u0027 + d); } catch(e){} })\"",
+                    "ticket":  "node scripts/ticket-pipeline.js",
+                    "test:post-deploy":  "node scripts/post-deploy-smoke.js",
+                    "test:smoke":  "node scripts/post-deploy-smoke.js"
+                },
+    "keywords":  [
+                     "playwright",
+                     "testing",
+                     "qa",
+                     "automation",
+                     "copilot"
+                 ],
+    "author":  "",
+    "license":  "ISC",
+    "devDependencies":  {
+                            "@playwright/test":  "^1.50.0",
+                            "@types/node":  "^22.0.0",
+                            "dotenv":  "^16.4.7",
+                            "typescript":  "^5.7.0"
+                        },
+    "dependencies":  {
+                         "js-yaml":  "^5.4.1"
+                     }
 }

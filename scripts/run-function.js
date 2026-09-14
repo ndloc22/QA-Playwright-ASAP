@@ -1,20 +1,13 @@
 /**
- * ▶️ E.ON Run Function — chạy testcase TRỰC TIẾP (có UI) + hand-off SSO/MFA thủ công.
+ * E.ON Run Function -- execute testcase directly (headed UI) with manual SSO/MFA hand-off.
  *
- * "Sau khi record, làm sao RUN LẠI testcase TRỰC TIẾP (không chạy ngầm), đồng thời
- *  có step tự dừng cho Tester tương tác để thực thi authen vì ASAP dính SSO."
- *
- * Lệnh này:
- *   - Chạy spec của 1 function ở chế độ --headed (HIỂN THỊ trình duyệt, KHÔNG chạy ngầm).
- *   - Bật INTERACTIVE_SSO=1 → Playwright chạy "setup" project (tests/support/auth.setup.ts):
- *       nếu gặp trang Microsoft SSO/MFA, DỪNG chờ Tester đăng nhập rồi lưu .auth/user.json.
- *   - Sau đó chạy các bước của testcase, tái sử dụng phiên đã đăng nhập.
+ * Runs a function's spec in headed mode with interactive SSO fallback.
  *
  * Usage:
  *   npm run test:function SEARCH_TELECONTROL
- *   npm run test:function SEARCH_TELECONTROL -- -g "01"        # lọc 1 testcase
- *   npm run test:function SEARCH_TELECONTROL -- --debug        # debug từng bước
- *   SSO_TIMEOUT=180000 npm run test:function SEARCH_TELECONTROL  # nới thời gian chờ SSO
+ *   npm run test:function SEARCH_TELECONTROL -- -g "01"        # filter single scenario
+ *   npm run test:function SEARCH_TELECONTROL -- --debug        # step-by-step debug
+ *   SSO_TIMEOUT=180000 npm run test:function SEARCH_TELECONTROL  # custom SSO wait
  */
 
 const path = require('path');
@@ -72,13 +65,13 @@ function main() {
   const key = parseKey(positional);
 
   if (!key) {
-    console.log('\n\x1b[33m⚡ Usage: npm run test:function <FUNCTION_NAME> [-- <playwright args>]\x1b[0m');
+    console.log('\n\x1b[33mUsage: npm run test:function <FUNCTION_NAME> [-- <playwright args>]\x1b[0m');
     console.log('   Example: npm run test:function SEARCH_TELECONTROL');
     console.log('            npm run test:function SEARCH_TELECONTROL -- -g "01" --debug\n');
     process.exit(1);
   }
 
-  // Ưu tiên spec trong nhóm functions/, fallback về spec phẳng.
+  // Prefer grouped function spec, fallback to flat spec
   const groupedRel = `tests/e2e/functions/TC-${key}.spec.ts`;
   const flatRel = `tests/e2e/TC-${key}.spec.ts`;
   const specRel = fs.existsSync(path.join(ROOT_DIR, groupedRel))
@@ -88,19 +81,19 @@ function main() {
       : null;
 
   if (!specRel) {
-    console.error(`\n\x1b[31m❌ Không thấy spec cho "${key}" (${groupedRel}).\x1b[0m`);
-    console.error(`   → Generate spec first: npm run sync-specs ${key} then npm run md-to-spec ${key}\n`);
+    console.error(`\n\x1b[31m[ERROR] No test spec found for "${key}" (${groupedRel}).\x1b[0m`);
+    console.error(`   -> Generate spec first: npm run sync-specs ${key} then npm run md-to-spec ${key}\n`);
     process.exit(1);
   }
 
   console.log('======================================================');
-  console.log(` ▶️  RUN DIRECT (headed) + SSO hand-off: ${key}`);
+  console.log(` [RUN] DIRECT (headed) + SSO hand-off: ${key}`);
   console.log('======================================================');
-  console.log(`📄 Spec:      ${specRel}`);
-  console.log(`🔐 SSO:       INTERACTIVE_SSO=1 (pauses for manual login if needed)`);
-  console.log(`⏱️  Timeout:   ${Math.round((Number(process.env.SSO_TIMEOUT) || 120000) / 1000)}s (override via SSO_TIMEOUT ms)`);
-  console.log(`🖥️  Mode:      --headed (browser visible, NOT headless)`);
-  if (passthrough.length) console.log(`➕ Thêm cờ:   ${passthrough.join(' ')}`);
+  console.log(`  * Spec:        ${specRel}`);
+  console.log(`  * SSO:         INTERACTIVE_SSO=1 (pauses for manual login if needed)`);
+  console.log(`  * Timeout:     ${Math.round((Number(process.env.SSO_TIMEOUT) || 120000) / 1000)}s (override via SSO_TIMEOUT ms)`);
+  console.log(`  * Mode:        --headed (browser visible, NOT headless)`);
+  if (passthrough.length) console.log(`  * Extra flags: ${passthrough.join(' ')}`);
   console.log('');
 
   const npxBin = resolveWindowsBinary('npx');
@@ -120,7 +113,7 @@ function main() {
   });
 
   if (result.error) {
-    console.error(`\n\x1b[31m❌ Failed to run Playwright: ${result.error.message}\x1b[0m\n`);
+    console.error(`\n\x1b[31m[ERROR] Failed to run Playwright: ${result.error.message}\x1b[0m\n`);
     process.exit(1);
   }
   process.exit(result.status == null ? 1 : result.status);

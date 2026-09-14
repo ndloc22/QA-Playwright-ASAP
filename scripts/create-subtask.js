@@ -1,5 +1,5 @@
 /**
- * ⚡ E.ON Jira Test Sub-task Creator via Playwright (0-token, pure automation)
+ * E.ON Jira Test Sub-task Creator via Playwright (0-token, pure automation)
  *
  * Thay thế prompt AI-agent `/create-test-sub-task` (mode: 'agent', click từng
  * bước trên trình duyệt -> rất tốn token) bằng tự động hoá Playwright thuần:
@@ -290,13 +290,13 @@ async function connectContext(headless) {
     const browser = await chromium.connectOverCDP('http://localhost:9222', { timeout: 2000 });
     const contexts = browser.contexts();
     if (contexts.length > 0) {
-      console.log('✅ Đã kết nối vào Chrome đang mở (CDP port 9222).');
+      console.log('[OK] Connected to open Chrome instance (CDP port 9222).');
       return { context: contexts[0], isCdp: true };
     }
   } catch (_) { /* không có CDP -> mở profile */ }
 
   // 2. Mở Chrome với persistent profile SSO đã lưu.
-  console.log(`🌐 Đang khởi động Chrome (Profile SSO: .auth/jira-profile, headless=${headless})...`);
+  console.log(`🌐 Starting Chrome (Profile SSO: .auth/jira-profile, headless=${headless})...`);
   try {
     const context = await chromium.launchPersistentContext(AUTH_DIR, {
       channel: 'chrome',
@@ -309,7 +309,7 @@ async function connectContext(headless) {
     });
     return { context, isCdp: false };
   } catch (_) {
-    console.warn('⚠️ Fallback sang Chromium mặc định...');
+    console.warn('[WARN] Fallback to default Chromium...');
     const context = await chromium.launchPersistentContext(AUTH_DIR, {
       headless,
       viewport: { width: 1400, height: 900 }
@@ -329,8 +329,8 @@ async function waitForAuth(page, headless) {
   let elapsed = 0;
 
   if (!headless) {
-    console.log('\n⏳ Nếu Jira yêu cầu đăng nhập SSO/2FA, Sếp cứ thao tác trên cửa sổ Chrome.');
-    console.log('   Script sẽ chờ tới khi phiên đăng nhập hợp lệ (tối đa 5 phút)...\n');
+    console.log('\n⏳ If Jira prompts for SSO/2FA login, complete it in the Chrome window.');
+    console.log('   Script will wait for a valid session (up to 5 min)...\n');
   }
 
   while (elapsed < maxWaitMs) {
@@ -355,7 +355,7 @@ async function waitForAuth(page, headless) {
     await page.waitForTimeout(pollInterval);
     elapsed += pollInterval;
     if (!headless && elapsed % 15000 === 0) {
-      console.log(`⏳ Đang chờ đăng nhập... (${Math.round(elapsed / 1000)}s / 300s)`);
+      console.log(`⏳ Waiting for login... (${Math.round(elapsed / 1000)}s / 300s)`);
     }
   }
   return false;
@@ -493,11 +493,11 @@ async function main() {
   }
 
   if (!parentKeys.length) {
-    console.error('❌ Thiếu mã Story cha hợp lệ.');
-    console.error('   Đơn lẻ  : node scripts/create-subtask.js ASAP-5568');
-    console.error('   Nhiều   : npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103');
-    console.error('   Dấu phẩy: npm run create-subtask -- "ASAP-101, ASAP-102"');
-    console.error('   Từ file : npm run create-subtask -- --file tickets.txt');
+    console.error('❌ Missing valid parent Story key.');
+    console.error('   Single   : node scripts/create-subtask.js ASAP-5568');
+    console.error('   Multiple : npm run create-subtask -- ASAP-101 ASAP-102 ASAP-103');
+    console.error('   Comma-sep: npm run create-subtask -- "ASAP-101, ASAP-102"');
+    console.error('   From file: npm run create-subtask -- --file tickets.txt');
     process.exit(1);
   }
 
@@ -505,20 +505,20 @@ async function main() {
   const effConcurrency = Math.max(1, Math.min(concurrency, parentKeys.length));
 
   if (summary && isMulti) {
-    console.warn('⚠️  --summary chỉ áp dụng cho ticket đơn lẻ — bỏ qua khi có nhiều ticket.');
+    console.warn('[WARN]  --summary only applies to single ticket -- ignored for multiple tickets.');
   }
 
   console.log('\n======================================================');
   if (isMulti) {
-    console.log(`⚡ Tạo Test Sub-task cho \x1b[36m${parentKeys.length}\x1b[0m Story (Bounded Concurrency Pool)`);
+    console.log(`Creating Test Sub-task for \x1b[36m${parentKeys.length}\x1b[0m Story (Bounded Concurrency Pool)`);
     console.log(`🎫 Tickets   : \x1b[1m${parentKeys.join(', ')}\x1b[0m`);
     console.log(`🧵 Concurrency: ${effConcurrency}`);
   } else {
     const summaryText = summary || `Test in DEV ${parentKeys[0]}`;
-    console.log(`⚡ Tạo Test Sub-task cho Story: \x1b[36m${parentKeys[0]}\x1b[0m`);
+    console.log(`Creating Test Sub-task for Story: \x1b[36m${parentKeys[0]}\x1b[0m`);
     console.log(`📝 Summary : \x1b[1m${summaryText}\x1b[0m`);
   }
-  console.log(`👤 Assignee: current user (Assign to me)`);
+  console.log(`Assignee: current user (Assign to me)`);
   console.log('======================================================\n');
 
   const { context, isCdp } = await connectContext(headless);
@@ -526,7 +526,7 @@ async function main() {
   let exitCode = 0;
 
   try {
-    console.log(`🔄 Đang mở Jira để thiết lập & xác thực session (1 lần)...`);
+    console.log(`Opening Jira to verify session (one-time)...`);
     const firstUrl = `${JIRA_BASE_URL}/browse/${parentKeys[0]}`;
     await authedPage.goto(firstUrl, { waitUntil: 'commit', timeout: 60000 });
 
@@ -539,7 +539,7 @@ async function main() {
           : 'Hết thời gian chờ đăng nhập Jira (5 phút).'
       );
     }
-    console.log('🎉 Session Jira hợp lệ. Đang tạo sub-task (0 token)...\n');
+    console.log('Jira session valid. Creating sub-task (0 token)...\n');
 
     const results = await runPool(context, parentKeys, {
       concurrency: effConcurrency,
@@ -551,7 +551,7 @@ async function main() {
 
     if (results.some((r) => r.status === 'error')) exitCode = 1;
   } catch (err) {
-    console.error(`\n❌ Lỗi: ${err.message}\n`);
+    console.error(`\n[ERROR] ${err.message}\n`);
     exitCode = 1;
   } finally {
     if (!isCdp) {

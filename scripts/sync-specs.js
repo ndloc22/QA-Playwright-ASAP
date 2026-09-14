@@ -502,7 +502,7 @@ function parseCleanLocator(portion) {
 
   if (engine === 'locator') {
     const css = strArg.value;
-    // Chỉ nhận CSS dựa trên id (#... hoặc [id="..."]) — bỏ qua selector class/combinator
+    // Chỉ nhận CSS dựa trên id (#... hoặc [id="..."]) -- bỏ qua selector class/combinator
     // của codegen (.ui-chkbox-box, .ui-g-1 > a...) vì chúng là "nhiễu" không bền vững.
     if (!/^\[id=/.test(css) && !/^#/.test(css)) return null;
     let i = strArg.endIdx;
@@ -664,7 +664,7 @@ function pascal(member) {
   return member.charAt(0).toUpperCase() + member.slice(1);
 }
 
-// Nhận diện locator thuộc form đăng nhập (Username/Password/Login) — dùng để bỏ
+// Nhận diện locator thuộc form đăng nhập (Username/Password/Login) -- dùng để bỏ
 // chúng ra khỏi việc chọn "dashboard entry" và để sinh ensureAuthenticated().
 function isLoginLocator(l) {
   if (l.locatorType !== 'role') return false;
@@ -695,7 +695,7 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   const entryMember = pickEntryMember(pageLocators);
   const baseLiteral = tsString(baseFallback || '');
 
-  // expect là value import (không phải type) — cần cho ensureAuthenticated().
+  // expect là value import (không phải type) -- cần cho ensureAuthenticated().
   const imports = ['Page'];
   if (hasFrame) imports.push('FrameLocator');
   imports.push('Locator');
@@ -1090,7 +1090,7 @@ function renderAutomationCall(member, action, values) {
  *
  * File gồm 2 phần:
  *   1. Phần văn xuôi Given/When/Then để Tester đọc & mô tả nghiệp vụ (KHÔNG parse).
- *   2. Khối ```automation``` MÁY ĐỌC ĐƯỢC — đây mới là nguồn được
+ *   2. Khối ```automation``` MÁY ĐỌC ĐƯỢC -- đây mới là nguồn được
  *      `npm run md-to-spec <KEY>` dịch ra file .spec.ts (0 token, không gọi AI).
  *
  * Khối automation được điền sẵn từ recording nên chạy được ngay; Tester chỉ cần
@@ -1114,7 +1114,7 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   }
 
   const L = [];
-  L.push(`# Testcase: TC-${key} — ${title}`);
+  L.push(`# Testcase: TC-${key} -- ${title}`);
   L.push('');
   L.push('- **Mã Testcase:** `TC-' + key + '-01`');
   L.push(`- **Module / Function:** ${title}`);
@@ -1125,7 +1125,7 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   L.push('> ✍️ **Tester chỉnh sửa file này**, sau đó chạy `npm run md-to-spec ' + key + '`');
   L.push('> để sinh lại `tests/e2e/functions/TC-' + key + '.spec.ts` **KHÔNG cần gọi AI/Copilot** (0 token).');
   L.push('');
-  L.push('## Các Bước Thực Hiện (Given / When / Then — phần mô tả cho người đọc)');
+  L.push('## Các Bước Thực Hiện (Given / When / Then -- phần mô tả cho người đọc)');
   L.push('1. **Given:** Tester mở ASAP và đăng nhập thành công.');
   L.push(`2. **When:** Tester thao tác trên module **${title}** (xem chi tiết ở khối \`automation\` bên dưới).`);
   L.push('3. **Then (Expected):**');
@@ -1136,17 +1136,17 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   L.push('');
   L.push('---');
   L.push('');
-  L.push('## 🤖 Automation Steps (MÁY ĐỌC — nguồn sinh spec)');
+  L.push('## 🤖 Automation Steps (MÁY ĐỌC -- nguồn sinh spec)');
   L.push('');
   L.push('> Cú pháp mỗi dòng trong khối dưới đây:');
-  L.push('> - `Given:` / `When:` / `Then:` / `And:` → mở một nhóm `test.step` mới (chữ sau dấu `:` là mô tả).');
-  L.push('> - `<methodName> "giá trị"` → gọi method tương ứng trên Page Object (vd `fillUsername "admin"`).');
-  L.push('> - `<methodName>` (không tham số) → gọi method không đối số (vd `clickLoginButton`).');
-  L.push('> - `expect <member> <matcher> ["value"]` → assertion. matcher: `visible`, `hidden`, `enabled`,');
+  L.push('> - `Given:` / `When:` / `Then:` / `And:` -> mở một nhóm `test.step` mới (chữ sau dấu `:` là mô tả).');
+  L.push('> - `<methodName> "giá trị"` -> gọi method tương ứng trên Page Object (vd `fillUsername "admin"`).');
+  L.push('> - `<methodName>` (không tham số) -> gọi method không đối số (vd `clickLoginButton`).');
+  L.push('> - `expect <member> <matcher> ["value"]` -> assertion. matcher: `visible`, `hidden`, `enabled`,');
   L.push('>   `disabled`, `text`, `value`, `count`, `url`.');
-  L.push('> - `include TC-' + key + '-01` → **kế thừa** toàn bộ bước của scenario khác (tái dùng 90% flow).');
-  L.push('> - `pause` → dừng cho Tester can thiệp thủ công (vd SSO); `wait <ms>` → chờ.');
-  L.push('> - `goto` / `ensureAuthenticated` → điều hướng base URL / đăng nhập (hỗ trợ hand-off SSO).');
+  L.push('> - `include TC-' + key + '-01` -> **kế thừa** toàn bộ bước của scenario khác (tái dùng 90% flow).');
+  L.push('> - `pause` -> dừng cho Tester can thiệp thủ công (vd SSO); `wait <ms>` -> chờ.');
+  L.push('> - `goto` / `ensureAuthenticated` -> điều hướng base URL / đăng nhập (hỗ trợ hand-off SSO).');
   L.push('');
   L.push('### Scenario TC-' + key + '-01: ' + title + ' (flow gốc)');
   L.push('');
@@ -1158,7 +1158,7 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   if (whenLines.length) {
     for (const line of whenLines) L.push('  ' + line);
   } else {
-    L.push('  # (chưa bóc tách được action — thêm lời gọi method thủ công ở đây)');
+    L.push('  # (chưa bóc tách được action -- thêm lời gọi method thủ công ở đây)');
   }
   L.push('Then: Kết quả mong đợi hiển thị');
   if (entryMember) {
@@ -1313,30 +1313,30 @@ function reportPom(key, pom) {
   switch (pom.status) {
     case 'created':
       console.log(
-        `📦 ${key}: packaged POM → ${pom.outRel} (class ${pom.pageClass}: ${pom.locatorCount} locators, ${pom.methodCount} methods).`
+        `[POM] ${key}: packaged POM -> ${pom.outRel} (class ${pom.pageClass}: ${pom.locatorCount} locators, ${pom.methodCount} methods).`
       );
       break;
     case 'overwritten':
       console.log(
-        `📦 ${key}: overwritten POM (--force-pom) → ${pom.outRel} (class ${pom.pageClass}: ${pom.locatorCount} locators, ${pom.methodCount} methods).`
+        `[POM] ${key}: overwritten POM (--force-pom) -> ${pom.outRel} (class ${pom.pageClass}: ${pom.locatorCount} locators, ${pom.methodCount} methods).`
       );
       break;
     case 'exists':
       console.log(
-        `↩️  ${key}: POM already exists at ${pom.outRel} → kept intact (use --force-pom to overwrite).`
+        `[SKIP] ${key}: POM already exists at ${pom.outRel} -> kept intact (use --force-pom to overwrite).`
       );
       break;
     case 'missing':
-      console.warn(`⚠️  ${key}: recording not found at ${pom.recordingRel} → skipped POM packaging.`);
+      console.warn(`[WARN] ${key}: recording not found at ${pom.recordingRel} -> skipped POM packaging.`);
       break;
     case 'empty':
-      console.warn(`⚠️  ${key}: recording has no interactions → skipped POM packaging.`);
+      console.warn(`[WARN] ${key}: recording has no interactions -> skipped POM packaging.`);
       break;
     case 'no-locators':
-      console.warn(`⚠️  ${key}: no clean locators extracted → skipped POM packaging.`);
+      console.warn(`[WARN] ${key}: no clean locators extracted -> skipped POM packaging.`);
       break;
     default:
-      console.warn(`⚠️  ${key}: POM status = ${pom.status}`);
+      console.warn(`[WARN] ${key}: POM status = ${pom.status}`);
   }
 }
 
@@ -1346,30 +1346,30 @@ function reportPom(key, pom) {
 function reportSpec(key, spec) {
   switch (spec.status) {
     case 'created':
-      console.log(`🧪 ${key}: generated starter spec → ${spec.specRel} (import ${spec.pageClass}).`);
+      console.log(`[SPEC] ${key}: generated starter spec -> ${spec.specRel} (import ${spec.pageClass}).`);
       break;
     case 'overwritten':
-      console.log(`🧪 ${key}: overwritten starter spec (--force-spec) → ${spec.specRel}.`);
+      console.log(`[SPEC] ${key}: overwritten starter spec (--force-spec) -> ${spec.specRel}.`);
       break;
     case 'exists':
       console.log(
-        `↩️  ${key}: spec already exists at ${spec.specRel} → kept intact (use --force-spec to overwrite).`
+        `[SKIP] ${key}: spec already exists at ${spec.specRel} -> kept intact (use --force-spec to overwrite).`
       );
       break;
     case 'no-pom':
-      console.warn(`⚠️  ${key}: Page Object not found → skipped spec generation (do not use --no-pom).`);
+      console.warn(`[WARN] ${key}: Page Object not found -> skipped spec generation (do not use --no-pom).`);
       break;
     case 'missing':
-      console.warn(`⚠️  ${key}: recording not found at ${spec.recordingRel} → skipped spec generation.`);
+      console.warn(`[WARN] ${key}: recording not found at ${spec.recordingRel} -> skipped spec generation.`);
       break;
     case 'empty':
-      console.warn(`⚠️  ${key}: recording has no interactions → skipped spec generation.`);
+      console.warn(`[WARN] ${key}: recording has no interactions -> skipped spec generation.`);
       break;
     case 'no-locators':
-      console.warn(`⚠️  ${key}: no clean locators extracted → skipped spec generation.`);
+      console.warn(`[WARN] ${key}: no clean locators extracted -> skipped spec generation.`);
       break;
     default:
-      console.warn(`⚠️  ${key}: spec status = ${spec.status}`);
+      console.warn(`[WARN] ${key}: spec status = ${spec.status}`);
   }
 }
 
@@ -1379,25 +1379,25 @@ function reportSpec(key, spec) {
 function reportMd(key, md) {
   switch (md.status) {
     case 'created':
-      console.log(`📝 ${key}: generated BDD scenario → ${md.mdRel} (edit and run: npm run md-to-spec ${key}).`);
+      console.log(`[MD] ${key}: generated BDD scenario -> ${md.mdRel} (edit and run: npm run md-to-spec ${key}).`);
       break;
     case 'overwritten':
-      console.log(`📝 ${key}: overwritten BDD scenario (--force-md) → ${md.mdRel}.`);
+      console.log(`[MD] ${key}: overwritten BDD scenario (--force-md) -> ${md.mdRel}.`);
       break;
     case 'exists':
-      console.log(`↩️  ${key}: BDD scenario already exists at ${md.mdRel} → kept intact (use --force-md to overwrite).`);
+      console.log(`[SKIP] ${key}: BDD scenario already exists at ${md.mdRel} -> kept intact (use --force-md to overwrite).`);
       break;
     case 'missing':
-      console.warn(`⚠️  ${key}: recording not found at ${md.recordingRel} → skipped BDD scenario generation.`);
+      console.warn(`[WARN] ${key}: recording not found at ${md.recordingRel} -> skipped BDD scenario generation.`);
       break;
     case 'empty':
-      console.warn(`⚠️  ${key}: recording has no interactions → skipped BDD scenario generation.`);
+      console.warn(`[WARN] ${key}: recording has no interactions -> skipped BDD scenario generation.`);
       break;
     case 'no-locators':
-      console.warn(`⚠️  ${key}: no clean locators extracted → skipped BDD scenario generation.`);
+      console.warn(`[WARN] ${key}: no clean locators extracted -> skipped BDD scenario generation.`);
       break;
     default:
-      console.warn(`⚠️  ${key}: md status = ${md.status}`);
+      console.warn(`[WARN] ${key}: md status = ${md.status}`);
   }
 }
 
@@ -1429,20 +1429,20 @@ function main() {
   const positional = argv.find((a) => !a.startsWith('--') && a.toLowerCase() !== 'force');
 
   console.log('======================================================');
-  console.log(' 🔁 Reverse-Grounding + POM packaging');
+  console.log(' [SYNC] Reverse-Grounding + POM packaging');
   console.log('======================================================');
 
   let keys = [];
   if (all) {
     keys = listRecordingKeys();
     if (keys.length === 0) {
-      console.log('ℹ️  No recordings found in tests/recordings/ (skipped).');
+      console.log('[INFO] No recordings found in tests/recordings/ (skipped).');
       return;
     }
   } else {
     const key = parseTicketKey(positional);
     if (!key) {
-      console.log('\n\x1b[33m⚡ Usage: npm run sync-specs <TICKET_KEY> [force] [--no-pom] [--force-pom] [--no-spec] [--force-spec] [--no-md] [--force-md]\x1b[0m');
+      console.log('\n\x1b[33mUsage: npm run sync-specs <TICKET_KEY> [force] [--no-pom] [--force-pom] [--no-spec] [--force-spec] [--no-md] [--force-md]\x1b[0m');
       console.log('          npm run sync-specs -- --all [force] [--force-pom] [--force-spec] [--force-md]');
       console.log('   Example: npm run sync-specs ADMINISTRATION          # keep existing files');
       console.log('            npm run sync-specs ADMINISTRATION force     # overwrite POM, spec, and md');
@@ -1461,19 +1461,19 @@ function main() {
       case 'ok':
         changed++;
         totalComponents += result.componentCount || 0;
-        console.log(`✅ ${key}: extracted ${result.componentCount} live component(s) from ${result.recordingRel}`);
+        console.log(`[OK] ${key}: extracted ${result.componentCount} live component(s) from ${result.recordingRel}`);
         break;
       case 'missing':
-        console.warn(`⚠️  ${key}: recording not found at ${result.recordingRel} (run: npm run record:ticket ${key})`);
+        console.warn(`[WARN] ${key}: recording not found at ${result.recordingRel} (run: npm run record:ticket ${key})`);
         break;
       case 'empty':
-        console.warn(`⚠️  ${key}: recording has no real interactions → skipped reverse-grounding.`);
+        console.warn(`[WARN] ${key}: recording has no real interactions -> skipped reverse-grounding.`);
         break;
       case 'no-components':
-        console.warn(`⚠️  ${key}: no selectors extracted → skipped.`);
+        console.warn(`[WARN] ${key}: no selectors extracted -> skipped.`);
         break;
       default:
-        console.warn(`⚠️  ${key}: ${result.status}`);
+        console.warn(`[WARN] ${key}: ${result.status}`);
     }
   }
 
@@ -1481,22 +1481,22 @@ function main() {
     finalize(spec);
     console.log('');
     console.log('------------------------------------------------------');
-    console.log(`📄 Reverse-Grounding: updated ${LIVE_SPEC_REL}`);
+    console.log(`[SPEC] Reverse-Grounding: updated ${LIVE_SPEC_REL}`);
     console.log(`   Sync summary: ${changed} recording(s), ${totalComponents} live component(s) reverse-grounded.`);
     console.log(`   Total: ${spec.recordingCount} recording(s), ${spec.componentCount} live component(s).`);
-    console.log('   → Automatically referenced by index.yaml & new-test.prompt.md for new tests.');
+    console.log('   -> Automatically referenced by index.yaml & new-test.prompt.md for new tests.');
     console.log('------------------------------------------------------');
   } else {
-    console.log('\nℹ️  No reverse-grounding changes recorded.');
+    console.log('\n[INFO] No reverse-grounding changes recorded.');
   }
 
   // ─── Bước 2: tự động đóng gói Page Object Model chuẩn ───
   if (noPom) {
-    console.log('\nℹ️  --no-pom: skipped Page Object Model packaging.');
+    console.log('\n[INFO] --no-pom: skipped Page Object Model packaging.');
   } else {
     console.log('');
     console.log('------------------------------------------------------');
-    console.log(' 📦 POM packaging: Recording -> tests/pages/<Key>Page.ts');
+    console.log(' [POM] Packaging: Recording -> tests/pages/<Key>Page.ts');
     console.log('------------------------------------------------------');
     let pomGenerated = 0;
     for (const key of keys) {
@@ -1506,18 +1506,18 @@ function main() {
     }
     console.log('------------------------------------------------------');
     console.log(
-      `📦 POM packaging complete: ${pomGenerated}/${keys.length} file(s) ${forcePom ? 'created/overwritten' : 'created'}.`
+      `[POM] Packaging complete: ${pomGenerated}/${keys.length} file(s) ${forcePom ? 'created/overwritten' : 'created'}.`
     );
     console.log('------------------------------------------------------');
   }
 
   // ─── Bước 3: sinh starter E2E spec (có guard chống ghi đè) ───
   if (noSpec) {
-    console.log('\nℹ️  --no-spec: skipped starter E2E spec generation.');
+    console.log('\n[INFO] --no-spec: skipped starter E2E spec generation.');
   } else {
     console.log('');
     console.log('------------------------------------------------------');
-    console.log(' 🧪 Starter spec: Recording -> tests/e2e/TC-<KEY>.spec.ts');
+    console.log(' [SPEC] Starter spec: Recording -> tests/e2e/TC-<KEY>.spec.ts');
     console.log('------------------------------------------------------');
     let specGenerated = 0;
     for (const key of keys) {
@@ -1527,20 +1527,20 @@ function main() {
     }
     console.log('------------------------------------------------------');
     console.log(
-      `🧪 Starter spec complete: ${specGenerated}/${keys.length} file(s) ${forceSpec ? 'created/overwritten' : 'created'}.`
+      `[SPEC] Starter spec complete: ${specGenerated}/${keys.length} file(s) ${forceSpec ? 'created/overwritten' : 'created'}.`
     );
     console.log('------------------------------------------------------');
   }
 
   // ─── Bước 4 (MỚI): sinh kịch bản Markdown BDD (nguồn cho md-to-spec) ───
   if (noMd) {
-    console.log('\nℹ️  --no-md: skipped BDD scenario generation.\n');
+    console.log('\n[INFO] --no-md: skipped BDD scenario generation.\n');
     return;
   }
 
   console.log('');
   console.log('------------------------------------------------------');
-  console.log(' 📝 BDD Scenario: Recording -> tests/testcases/functions/TC-<KEY>.md');
+  console.log(' [MD] BDD Scenario: Recording -> tests/testcases/functions/TC-<KEY>.md');
   console.log('------------------------------------------------------');
   let mdGenerated = 0;
   for (const key of keys) {
@@ -1550,9 +1550,9 @@ function main() {
   }
   console.log('------------------------------------------------------');
   console.log(
-    `📝 BDD scenario complete: ${mdGenerated}/${keys.length} file(s) ${forceMd ? 'created/overwritten' : 'created'}.`
+    `[MD] BDD scenario complete: ${mdGenerated}/${keys.length} file(s) ${forceMd ? 'created/overwritten' : 'created'}.`
   );
-  console.log('   → Edit the .md file then run: npm run md-to-spec <KEY> (0 AI tokens).');
+  console.log('   -> Edit the .md file then run: npm run md-to-spec <KEY> (0 AI tokens).');
   console.log('------------------------------------------------------\n');
 }
 

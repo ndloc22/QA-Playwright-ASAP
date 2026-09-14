@@ -104,18 +104,18 @@ async function downloadAttachments(browserContext, urls, destDir) {
   const downloaded = [];
   for (const url of urls) {
     if (ICON_URL_PATTERN.test(url)) {
-      console.log(`   ⏭️  Bo qua icon/avatar/badge (URL pattern): ${url}`);
+      console.log(`   ⏭️  Skipping icon/avatar/badge (URL pattern): ${url}`);
       continue;
     }
     try {
       const response = await browserContext.request.get(url, { timeout: 30000 });
       if (!response.ok()) {
-        console.warn(`   ⚠️  Bo qua (HTTP ${response.status()}): ${url}`);
+        console.warn(`   ⚠️  Skipped (HTTP ${response.status()}): ${url}`);
         continue;
       }
       const buffer = await response.body();
       if (buffer.length < MIN_ATTACHMENT_BYTES) {
-        console.log(`   ⏭️  Bo qua file qua nho (${(buffer.length / 1024).toFixed(1)}KB < 50KB, co the la icon/avatar): ${url}`);
+        console.log(`   ⏭️  Skipping small file (${(buffer.length / 1024).toFixed(1)}KB < 50KB, likely icon/avatar): ${url}`);
         continue;
       }
       let filename = sanitizeFilename(decodeURIComponent(path.basename(new URL(url).pathname)));
@@ -135,9 +135,9 @@ async function downloadAttachments(browserContext, urls, destDir) {
       }
       fs.writeFileSync(finalPath, buffer);
       downloaded.push({ url, localPath: finalPath, filename: path.basename(finalPath) });
-      console.log(`   ✅ Tai xong (${(buffer.length / 1024).toFixed(1)}KB): ${path.basename(finalPath)}`);
+      console.log(`   ✅ Downloaded (${(buffer.length / 1024).toFixed(1)}KB): ${path.basename(finalPath)}`);
     } catch (err) {
-      console.warn(`   ⚠️  Loi khi tai ${url}: ${err.message}`);
+      console.warn(`   ⚠️  Error downloading ${url}: ${err.message}`);
     }
   }
   return downloaded;
@@ -155,14 +155,14 @@ async function fetchJiraTicket(target) {
   const key = parseTicketKey(target);
 
   if (!url || !key) {
-    console.error('❌ Vui lòng cung cấp URL hoặc mã Jira Ticket hợp lệ!');
-    console.error('Ví dụ: node scripts/fetch-jira.js KFWT-1161');
+    console.error('[ERROR] Please provide a valid Jira URL or ticket key!');
+    console.error('Example: node scripts/fetch-jira.js KFWT-1161');
     process.exit(1);
   }
 
   console.log(`\n======================================================`);
-  console.log(`⚡ Bắt đầu bóc tách Jira Ticket: \x1b[36m${key}\x1b[0m`);
-  console.log(`🔗 URL: \x1b[34m${url}\x1b[0m`);
+  console.log(`[JIRA] Ingesting Jira ticket: \x1b[36m${key}\x1b[0m`);
+  console.log(`  * URL: \x1b[34m${url}\x1b[0m`);
   console.log(`======================================================\n`);
 
   let browserContext;
@@ -175,13 +175,13 @@ async function fetchJiraTicket(target) {
     if (contexts.length > 0) {
       browserContext = contexts[0];
       isCdp = true;
-      console.log('✅ Đã kết nối vào Chrome đang mở của Sếp (CDP port 9222)!');
+      console.log('[OK] Connected to open Chrome instance (CDP port 9222)!');
     }
   } catch (_) {}
 
   // 2. Nếu không có CDP, mở Chrome với persistent profile
   if (!browserContext) {
-    console.log('🌐 Đang khởi động Google Chrome (Profile lưu trữ tại .auth/jira-profile)...');
+    console.log('[INFO] Launching Google Chrome (Profile stored at .auth/jira-profile)...');
     try {
       browserContext = await chromium.launchPersistentContext(AUTH_DIR, {
         channel: 'chrome',
@@ -194,7 +194,7 @@ async function fetchJiraTicket(target) {
         ]
       });
     } catch (launchErr) {
-      console.warn('⚠️ Fallback sang Chromium mặc định...');
+      console.warn('[WARN] Falling back to default Chromium...');
       browserContext = await chromium.launchPersistentContext(AUTH_DIR, {
         headless: false,
         viewport: { width: 1400, height: 900 }
@@ -205,14 +205,14 @@ async function fetchJiraTicket(target) {
   const page = await browserContext.newPage();
 
   try {
-    console.log(`🔄 Đang điều hướng tới: ${url}...`);
+    console.log(`[NAV] Navigating to: ${url}...`);
     await page.goto(url, { waitUntil: 'commit', timeout: 60000 });
 
     // 3. VÒNG LẶP CHỜ ĐĂNG NHẬP THẬT (Anti-Premature Close)
     // Tuyệt đối KHÔNG kiểm tra u.href.includes(key) vì trang login Microsoft có chứa key trong query redirect!
-    console.log('\n⏳ \x1b[33mĐang kiểm tra trạng thái đăng nhập...\x1b[0m');
-    console.log('👉 Nếu màn hình yêu cầu đăng nhập SSO / 2FA Microsoft, Sếp cứ thong thả thao tác trên cửa sổ Chrome.');
-    console.log('⏳ Script sẽ kiên nhẫn chờ đến khi vào được đúng trang Jira ticket (tối đa 5 phút)...\n');
+    console.log('\n[INFO] \x1b[33mChecking login status...\x1b[0m');
+    console.log('  * If Microsoft SSO / 2FA is prompted, please complete it in the Chrome window.');
+    console.log('  * Script will wait until Jira ticket page is reached (up to 5 min)...\n');
 
     const maxWaitMs = 300000; // 5 phút
     const pollInterval = 1500;
@@ -240,7 +240,7 @@ async function fetchJiraTicket(target) {
 
           if (isJiraReady) {
             authenticated = true;
-            console.log('🎉 \x1b[32mĐÃ XÁC NHẬN VÀO ĐƯỢC TRANG JIRA TICKET THÀNH CÔNG!\x1b[0m');
+            console.log('[OK] \x1b[32mJIRA TICKET PAGE REACHED SUCCESSFULLY!\x1b[0m');
             break;
           }
         } catch (_) {}
@@ -250,7 +250,7 @@ async function fetchJiraTicket(target) {
       elapsed += pollInterval;
 
       if (elapsed % 15000 === 0) {
-        console.log(`⏳ Đang chờ đăng nhập... (${Math.round(elapsed / 1000)}s / 300s)`);
+        console.log(`[INFO] Waiting for login... (${Math.round(elapsed / 1000)}s / 300s)`);
       }
     }
 
@@ -259,11 +259,11 @@ async function fetchJiraTicket(target) {
     }
 
     // Đợi thêm 3s để DOM hydration và REST API sẵn sàng
-    console.log('⏳ Đang đợi nội dung ticket tải hoàn tất...');
+    console.log('[INFO] Waiting for ticket content to load...');
     await page.waitForTimeout(3000);
 
     // 4. Bóc tách dữ liệu
-    console.log('📥 Đang trích xuất dữ liệu từ Jira...');
+    console.log('[INFO] Extracting data from Jira...');
     const ticketData = await page.evaluate(async (ticketKey) => {
       let restData = null;
 
@@ -413,8 +413,8 @@ async function fetchJiraTicket(target) {
 
     // Kiểm tra tính hợp lệ của dữ liệu trước khi lưu
     if (!ticketData.summary && !ticketData.description) {
-      console.error('\n❌ \x1b[31mCẢNH BÁO: Không tìm thấy Tiêu đề và Mô tả của Ticket!\x1b[0m');
-      console.error('Trang có thể chưa nạp xong hoặc quyền truy cập bị hạn chế. Script sẽ KHÔNG ghi đè file rỗng.\n');
+      console.error('\n[WARN] \x1b[31mWARNING: Ticket Title and Description not found!\x1b[0m');
+      console.error('Page may still be loading or access is restricted. Script will NOT overwrite with empty content.\n');
 
       // 🔍 Lưu dữ liệu chẩn đoán để biết trang thực tế đang hiển thị gì
       try {
@@ -438,9 +438,9 @@ async function fetchJiraTicket(target) {
           `hasSummaryVal: ${debug.hasSummaryVal} | hasKeyVal: ${debug.hasKeyVal}\n` +
           `classicJira: ${debug.detectedFrameworks.classicJira} | cloudSpa: ${debug.detectedFrameworks.cloudSpa}\n` +
           `\n----- BODY TEXT (first 1500 chars) -----\n${debug.bodySnippet}\n`, 'utf-8');
-        console.error(`🔍 Đã lưu chẩn đoán: ${path.relative(process.cwd(), debugTxtPath)} và ${path.relative(process.cwd(), screenshotPath)}\n`);
+        console.error(`[DIAG] Saved diagnostics: ${path.relative(process.cwd(), debugTxtPath)} and ${path.relative(process.cwd(), screenshotPath)}\n`);
       } catch (dbgErr) {
-        console.error('⚠️ Không thể lưu dữ liệu chẩn đoán:', dbgErr.message);
+        console.error('[WARN] Could not save diagnostics:', dbgErr.message);
       }
       return;
     }
@@ -469,7 +469,7 @@ async function fetchJiraTicket(target) {
     ticketData.syncedAt = new Date().toISOString();
 
     // 5. Tải attachment thực (ảnh mockup gốc + file đính kèm, đã lọc icon/avatar)
-    console.log('\n🖼️  Đang tải attachment thực (đã lọc icon/avatar/badge)...');
+    console.log('\n[INFO] Downloading real attachments (filtered icon/avatar/badge)...');
     const TICKET_ASSET_DIR = path.join(TICKETS_DIR, key);
     const ATTACHMENTS_DIR = path.join(TICKET_ASSET_DIR, 'attachments');
     fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
@@ -479,7 +479,7 @@ async function fetchJiraTicket(target) {
 
     try {
       const { images, attachments } = await collectAttachmentUrls(page);
-      console.log(`   🔎 Tìm thấy ${images.length} ảnh + ${attachments.length} attachment trong Description/AC (sẽ lọc icon/avatar/badge < 50KB).`);
+      console.log(`   [INFO] Found ${images.length} images + ${attachments.length} attachments in Description/AC.`);
 
       const allDownloads = await downloadAttachments(browserContext, [...images, ...attachments], ATTACHMENTS_DIR);
       // Phân loại lại: url nằm trong images[] -> ảnh mockup; còn lại -> attachment file
@@ -487,7 +487,7 @@ async function fetchJiraTicket(target) {
       downloadedImages = allDownloads.filter(d => imageUrlSet.has(d.url));
       downloadedAttachments = allDownloads.filter(d => !imageUrlSet.has(d.url));
     } catch (assetErr) {
-      console.warn(`   ⚠️  Lỗi khi xử lý ảnh/attachment (bỏ qua, không ảnh hưởng dữ liệu ticket): ${assetErr.message}`);
+      console.warn(`   [WARN] Error processing image/attachment (ignored): ${assetErr.message}`);
     }
 
     ticketData.assets = {
@@ -561,16 +561,16 @@ async function fetchJiraTicket(target) {
     fs.writeFileSync(mdPath, mdContent, 'utf-8');
     fs.writeFileSync(jsonPath, JSON.stringify(ticketData, null, 2), 'utf-8');
 
-    console.log(`\n🎉 \x1b[32mBÓC TÁCH THÀNH CÔNG TICKET ${key}!\x1b[0m`);
-    console.log(`📄 Markdown: \x1b[36m${path.relative(process.cwd(), mdPath)}\x1b[0m`);
-    console.log(`📦 JSON:     \x1b[36m${path.relative(process.cwd(), jsonPath)}\x1b[0m`);
-    console.log(`📌 Nguồn:    \x1b[33m${ticketData.source}\x1b[0m`);
-    console.log(`🏷️  Tiêu đề:  \x1b[1m${ticketData.summary}\x1b[0m`);
-    console.log(`🖼️  Ảnh mockup: \x1b[36m${downloadedImages.length}\x1b[0m | 📎 Attachment: \x1b[36m${downloadedAttachments.length}\x1b[0m`);
-    console.log(`📂 Assets:   \x1b[36m${path.relative(process.cwd(), TICKET_ASSET_DIR)}\x1b[0m\n`);
+    console.log(`\n[OK] \x1b[32mINGESTED JIRA TICKET ${key} SUCCESSFULLY!\x1b[0m`);
+    console.log(`  * Markdown:    \x1b[36m${path.relative(process.cwd(), mdPath)}\x1b[0m`);
+    console.log(`  * JSON:        \x1b[36m${path.relative(process.cwd(), jsonPath)}\x1b[0m`);
+    console.log(`  * Source:      \x1b[33m${ticketData.source}\x1b[0m`);
+    console.log(`  * Title:       \x1b[1m${ticketData.summary}\x1b[0m`);
+    console.log(`  * Mockup images: \x1b[36m${downloadedImages.length}\x1b[0m | Attachments: \x1b[36m${downloadedAttachments.length}\x1b[0m`);
+    console.log(`  * Assets:      \x1b[36m${path.relative(process.cwd(), TICKET_ASSET_DIR)}\x1b[0m\n`);
 
   } catch (err) {
-    console.error(`\n❌ Lỗi:`, err.message);
+    console.error(`\n[ERROR]`, err.message);
   } finally {
     if (!isCdp) {
       // Đợi 2s để người dùng kịp nhìn thấy trang trước khi đóng
@@ -585,8 +585,8 @@ async function fetchJiraTicket(target) {
 
 const targetArg = process.argv[2];
 if (!targetArg) {
-  console.log('⚡ Usage: node scripts/fetch-jira.js <KEY_OR_URL>');
-  console.log('   Ví dụ: node scripts/fetch-jira.js KFWT-1161');
+  console.log('Usage: node scripts/fetch-jira.js <KEY_OR_URL>');
+  console.log('   Example: node scripts/fetch-jira.js KFWT-1161');
   process.exit(1);
 }
 

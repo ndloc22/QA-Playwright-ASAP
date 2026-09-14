@@ -1,17 +1,13 @@
-﻿/**
- * 🔐 login.js — Đăng nhập SSO/MFA 1 lần, lưu session dùng lại vĩnh viễn
- * =========================================================================
- * Giải quyết vấn đề: "mỗi lần chạy lại bị hỏi đăng nhập SSO miết" — Tester
- * chỉ cần chạy lệnh này 1 LẦN DUY NHẤT. Script sẽ mở trình duyệt Chrome
- * hiện lên, Tester đăng nhập tay (kể cả MFA điện thoại), rồi tắt cửa sổ.
- * Session được lưu tự động vào .auth/user.json — các lệnh record/test sau
- * đó tải lại file này nên KHÔNG BAO GIỜ phải đăng nhập lại (trừ khi token
- * Microsoft hết hạn nhiều ngày sau).
+/**
+ * login.js -- One-time interactive SSO/MFA login to save reusable browser session.
  *
- * Sử dụng:
+ * Saves authenticated storageState to .auth/user.json so subsequent codegen
+ * and test runs skip login entirely.
+ *
+ * Usage:
  *   npm run login
- *   npm run login -- --url /some/deep/path   (bắt đầu từ đường dẫn sâu)
- *   npm run login -- --timeout 180            (tăng thời gian chờ lên 180s)
+ *   npm run login -- --url /some/deep/path   (start from deep URL)
+ *   npm run login -- --timeout 180          (wait up to 180s)
  */
 
 const path = require('path');
@@ -63,20 +59,19 @@ function banner(lines) {
 
 async function main() {
   banner([
-    '🔐 1-CLICK SSO/MFA LOGIN — SAVE REUSABLE SESSION',
+    '[AUTH] 1-CLICK SSO/MFA LOGIN -- SAVE REUSABLE SESSION',
     '',
     '  Opening URL: ' + startUrl,
     '',
     '  If Microsoft SSO login appears:',
-    '    👉 Enter your email & password as usual.',
-    '    👉 Approve MFA on your phone (if prompted).',
+    '    * Enter your email & password as usual.',
+    '    * Approve MFA on your phone (if prompted).',
     '',
-    '  ⏱  Timeout: ' + timeoutSec + 's  (use --timeout <sec> to adjust)',
+    '  Timeout: ' + timeoutSec + 's  (use --timeout <sec> to adjust)',
     '',
     '  Session will be saved automatically once logged in.',
   ]);
 
-  const { chromium } = require('@playwright/test');
   const browser = await chromium.launch({ headless: false, slowMo: 100 });
   const context = await browser.newContext({
     viewport: null,
@@ -106,8 +101,8 @@ async function main() {
       saved = true;
 
       console.log('');
-      console.log('✅  Login successful!');
-      console.log('🔐  Session saved -> .auth/user.json');
+      console.log('[OK] Login successful!');
+      console.log('[OK] Session saved -> .auth/user.json');
       console.log('');
       console.log('  Subsequent commands will reuse this session without re-login:');
       console.log('    npm run record:ticket  <KEY>');

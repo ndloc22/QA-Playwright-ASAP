@@ -1,22 +1,17 @@
 /**
- * 📝→🧪 E.ON MD-to-Spec: dịch kịch bản Markdown BDD -> Playwright spec (0 TOKEN)
+ * E.ON MD-to-Spec: compile Markdown BDD scenarios -> Playwright spec (0 AI TOKENS)
  *
- * "Tester muốn sau khi edit testcase chuẩn trong file .md thì EXECUTE ra .spec.ts
- *  mà KHÔNG cần gọi Copilot (vì đã custom manual rồi)."
+ * "Compile .md scenarios directly to .spec.ts without AI calls."
  *
- * Script này đọc kịch bản `tests/testcases/functions/TC-<NAME>.md` (do
- * `npm run sync-specs <NAME>` sinh sẵn, Tester đã chỉnh Given/When/Then thủ công),
- * ánh xạ các bước trong khối ```automation``` sang method/locator của Page Object
- * tương ứng (`tests/pages/functions/<PascalCase>Page.ts`), rồi sinh / cập nhật ra
+ * Reads `tests/testcases/functions/TC-<NAME>.md`, maps ```automation``` steps to Page Object methods/locators, and outputs
  * `tests/e2e/functions/TC-<NAME>.spec.ts`.
  *
- * Toàn bộ quá trình chạy trên CPU cục bộ, KHÔNG gọi bất kỳ AI/LLM nào (0 token) và
- * hoàn toàn deterministic: cùng 1 file .md luôn cho ra cùng 1 file .spec.ts.
+ * Runs 100% locally on CPU with zero tokens and deterministic compilation.
  *
- * ── Cú pháp khối ```automation``` ──────────────────────────────────────────────
- *   Given: <mô tả>        # mở một nhóm test.step (kèm Given/When/Then/And/Setup...)
- *   When:  <mô tả>
- *   Then:  <mô tả>
+ * -- ```automation``` block syntax ----------------------------------------------
+ *   Given: <description>   # begins a test.step group (Given/When/Then/And/Setup...)
+ *   When:  <description>
+ *   Then:  <description>
  *     <methodName>                 -> await pom.methodName();
  *     <methodName> "value"         -> await pom.methodName('value');
  *     <methodName>("a", "b")       -> await pom.methodName('a', 'b');
@@ -30,16 +25,16 @@
  *     expect <member> value "x"    -> toHaveValue('x')
  *     expect <member> count 3      -> toHaveCount(3)
  *     expect url "asap"            -> await expect(page).toHaveURL(/asap/)
- *     pause                        -> await page.pause();   (dừng để can thiệp SSO)
+ *     pause                        -> await page.pause();   (pause for manual SSO)
  *     wait 1500                    -> await page.waitForTimeout(1500);
- *     include TC-<NAME>-01         -> KẾ THỪA toàn bộ bước của scenario khác
- *     # ... / // ...               -> comment (bỏ qua)
+ *     include TC-<NAME>-01         -> INHERIT all steps from another scenario
+ *     # ... / // ...               -> comment (ignored)
  *
  * Usage:
  *   node scripts/md-to-spec.js SEARCH_TELECONTROL
  *   node scripts/md-to-spec.js TC-SEARCH_TELECONTROL.md
  *   npm run md-to-spec SEARCH_TELECONTROL
- *   npm run md-to-spec SEARCH_TELECONTROL -- --stdout   # in ra màn hình, không ghi file
+ *   npm run md-to-spec SEARCH_TELECONTROL -- --stdout   # output to stdout, do not write file
  */
 
 const fs = require('fs');
@@ -92,10 +87,7 @@ function resolvePom(key, isFunction) {
 }
 
 /**
- * Bóc tách "giao diện" của Page Object đã sinh để VALIDATE các bước trong .md:
- *   - methods:  các async method có thể gọi (clickX, fillY, ensureAuthenticated...)
- *   - members:  các Locator (readonly field + getter trả về Locator) cho `expect`
- *   - baseFallback: giá trị BASE_URL_FALLBACK để `goto` fallback khi thiếu env.
+ * Introspect Page Object interface to VALIDATE .md steps against live methods/locators.
  */
 function introspectPom(pomSource) {
   const methods = new Set();
@@ -115,9 +107,7 @@ function introspectPom(pomSource) {
 }
 
 /**
- * Tách file .md thành các scenario. Mỗi scenario = 1 heading `### ... TC-<ID> ...`
- * kèm khối ```automation``` ngay sau nó. Chỉ khối có ngôn ngữ đúng `automation`
- * mới được đọc (```automation-disabled``` là ví dụ mẫu -> bỏ qua).
+ * Parse .md file into scenarios (each heading ### ... TC-<ID> followed by an ```automation``` block).
  */
 function parseScenarios(mdSource, key) {
   const lines = mdSource.split(/\r?\n/);
@@ -151,7 +141,7 @@ function parseScenarios(mdSource, key) {
       // Strip leading "Scenario TC-...:" noise for a clean test title.
       title = title
         .replace(/^Scenario\s+/i, '')
-        .replace(/TC-[A-Za-z0-9_-]+?-\d+\s*[:：\-—]?\s*/i, '')
+        .replace(/TC-[A-Za-z0-9_-]+?-\d+\s*[::\-]?\s*/i, '')
         .trim();
       if (!title) title = id;
       if (!scenarios.find((s) => s.id === id)) {
@@ -207,13 +197,12 @@ const EXPECT_MATCHERS = {
 };
 
 /**
- * Expand 1 scenario -> danh sách item ({type:'group'|'action', ...}) đã resolve code.
- * Xử lý `include <ID>` bằng đệ quy (có guard chống vòng lặp) để KẾ THỪA flow.
+ * Expand 1 scenario into resolved actions, supporting `include <ID>` inheritance.
  */
 function expandScenario(scenario, scenarioMap, pom, errors, seen = new Set()) {
   const items = [];
   if (seen.has(scenario.id)) {
-    errors.push(`Vòng lặp include phát hiện ở ${scenario.id} — bỏ qua để tránh đệ quy vô tận.`);
+    errors.push(`Include cycle detected in ${scenario.id} -- skipped to prevent infinite recursion.`);
     return items;
   }
   seen.add(scenario.id);
@@ -237,7 +226,7 @@ function expandScenario(scenario, scenarioMap, pom, errors, seen = new Set()) {
       const targetId = includeMatch[1].toUpperCase();
       const target = scenarioMap.get(targetId);
       if (!target) {
-        errors.push(`include: không tìm thấy scenario "${targetId}" (khai báo bằng heading "### Scenario ${targetId}: ...").`);
+        errors.push(`include: scenario "${targetId}" not found (must be declared with heading "### Scenario ${targetId}: ...").`);
         continue;
       }
       items.push(...expandScenario(target, scenarioMap, pom, errors, new Set(seen)));
@@ -250,7 +239,7 @@ function expandScenario(scenario, scenarioMap, pom, errors, seen = new Set()) {
   return items;
 }
 
-/** Ánh xạ 1 dòng action -> 1 dòng TypeScript (đã validate với Page Object). */
+/** Resolve a single action line to TypeScript, validated against Page Object. */
 function resolveAction(line, pom, errors, scenarioId) {
   // pause / wait
   if (/^pause$/i.test(line)) return 'await page.pause();';
@@ -281,12 +270,12 @@ function resolveAction(line, pom, errors, scenarioId) {
       return `await expect(page).toHaveURL(new RegExp(${tsStr(v)}));`;
     }
     if (!pom.members.has(member)) {
-      errors.push(`[${scenarioId}] expect: Page Object không có locator "${member}". Locator hợp lệ: ${[...pom.members].join(', ') || '(none)'}`);
+      errors.push(`[${scenarioId}] expect: Page Object has no locator "${member}". Valid locators: ${[...pom.members].join(', ') || '(none)'}`);
       return null;
     }
     const build = EXPECT_MATCHERS[matcher];
     if (!build) {
-      errors.push(`[${scenarioId}] expect: matcher "${matcher}" không hỗ trợ. Dùng: ${Object.keys(EXPECT_MATCHERS).join(', ')}, url.`);
+      errors.push(`[${scenarioId}] expect: matcher "${matcher}" is not supported. Use: ${Object.keys(EXPECT_MATCHERS).join(', ')}, url.`);
       return null;
     }
     const toks = tokenizeArgs(rest);
@@ -304,7 +293,7 @@ function resolveAction(line, pom, errors, scenarioId) {
   } else {
     const spaceMatch = line.match(/^([A-Za-z_$][\w$]*)\b(.*)$/);
     if (!spaceMatch) {
-      errors.push(`Không hiểu dòng bước: "${line}"`);
+      errors.push(`Unrecognized step line: "${line}"`);
       return null;
     }
     name = spaceMatch[1];
@@ -312,26 +301,26 @@ function resolveAction(line, pom, errors, scenarioId) {
   }
 
   if (!pom.methods.has(name)) {
-    errors.push(`[${scenarioId}] method: Page Object không có method "${name}". Method hợp lệ: ${[...pom.methods].join(', ') || '(none)'}`);
+    errors.push(`[${scenarioId}] method: Page Object has no method "${name}". Valid methods: ${[...pom.methods].join(', ') || '(none)'}`);
     return null;
   }
   const args = argTokens.map(renderArg).join(', ');
   return `await pom.${name}(${args});`;
 }
 
-/** Render toàn bộ nội dung file .spec.ts từ danh sách scenario đã expand. */
+/** Render the entire .spec.ts content from expanded scenarios. */
 function renderSpec(key, pageInfo, baseFallback, scenarios, scenarioMap, mdRel, errors) {
   const L = [];
   L.push("import { test, expect } from '@playwright/test';");
   L.push(`import { ${pageInfo.pageClass} } from '${pageInfo.importSpecifier}';`);
   L.push('');
   L.push('/**');
-  L.push(` * TC-${key}: E2E spec sinh TỰ ĐỘNG từ kịch bản Markdown \`${mdRel}\`.`);
+  L.push(` * TC-${key}: E2E spec generated automatically from Markdown scenario \`${mdRel}\`.`);
   L.push(' *');
-  L.push(' * Nguồn duy nhất là file .md (khối automation). File này được sinh bởi');
-  L.push(` * \`npm run md-to-spec ${key}\` (scripts/md-to-spec.js) — 0 token, KHÔNG gọi AI.`);
+  L.push(' * Source of truth is the .md file (automation block). Generated by');
+  L.push(` * \`npm run md-to-spec ${key}\` (scripts/md-to-spec.js) -- 0 tokens, NO AI calls.`);
   L.push(' *');
-  L.push(' * KHÔNG sửa tay file này: mọi thay đổi hãy sửa trong file .md rồi chạy lại md-to-spec.');
+  L.push(' * DO NOT edit manually: edit the .md file and re-run md-to-spec.');
   L.push(' */');
   L.push(`const BASE_URL = (process.env.BASE_URL || ${tsStr(baseFallback || '')}).replace(/\\/+$/, '') + '/';`);
   L.push('');
@@ -360,13 +349,13 @@ function renderSpec(key, pageInfo, baseFallback, scenarios, scenarioMap, mdRel, 
     }
 
     if (!groups.length) {
-      L.push('    // (Khối automation rỗng — thêm bước trong file .md rồi chạy lại md-to-spec.)');
+      L.push('    // (Empty automation block -- add steps to .md file and re-run md-to-spec.)');
     }
     for (const g of groups) {
       L.push('');
       L.push(`    await test.step(${tsStr(g.label)}, async () => {`);
       if (!g.actions.length) {
-        L.push('      // (không có bước nào trong nhóm này)');
+        L.push('      // (no steps in this group)');
       }
       for (const a of g.actions) {
         L.push(`      ${a}`);
@@ -389,27 +378,27 @@ function main() {
   const key = parseKey(positional);
 
   console.log('======================================================');
-  console.log(' 📝→🧪 MD-to-Spec (0 token, deterministic)');
+  console.log(' [SPEC] MD-to-Spec (0 token, deterministic)');
   console.log('======================================================');
 
   if (!key) {
-    console.log('\n\x1b[33m⚡ Usage: npm run md-to-spec <FUNCTION_NAME> [-- --stdout]\x1b[0m');
+    console.log('\n\x1b[33mUsage: npm run md-to-spec <FUNCTION_NAME> [-- --stdout]\x1b[0m');
     console.log('   Example: npm run md-to-spec SEARCH_TELECONTROL');
-    console.log('   (Reads tests/testcases/functions/TC-<NAME>.md → generates tests/e2e/functions/TC-<NAME>.spec.ts)\n');
+    console.log('   (Reads tests/testcases/functions/TC-<NAME>.md -> generates tests/e2e/functions/TC-<NAME>.spec.ts)\n');
     process.exit(1);
   }
 
   const { mdFull, mdRel, isFunction } = resolveMd(key);
   if (!fs.existsSync(mdFull)) {
-    console.error(`\n\x1b[31m❌ Scenario file not found: ${mdRel}\x1b[0m`);
-    console.error(`   → Sinh nó trước bằng: npm run sync-specs ${key}\n`);
+    console.error(`\n\x1b[31m[ERROR] Scenario file not found: ${mdRel}\x1b[0m`);
+    console.error(`   -> Generate it first: npm run sync-specs ${key}\n`);
     process.exit(1);
   }
 
   const pageInfo = resolvePom(key, isFunction);
   if (!fs.existsSync(pageInfo.pomFull)) {
-    console.error(`\n\x1b[31m❌ Page Object not found: ${pageInfo.pomRel}\x1b[0m`);
-    console.error(`   → Sinh nó trước bằng: npm run sync-specs ${key}\n`);
+    console.error(`\n\x1b[31m[ERROR] Page Object not found: ${pageInfo.pomRel}\x1b[0m`);
+    console.error(`   -> Generate it first: npm run sync-specs ${key}\n`);
     process.exit(1);
   }
 
@@ -420,8 +409,8 @@ function main() {
 
   const scenarios = parseScenarios(mdSource, key);
   if (!scenarios.length) {
-    console.error(`\n\x1b[31m❌ No \`\`\`automation\`\`\` block found in ${mdRel}\x1b[0m`);
-    console.error('   → Thêm 1 khối ```automation ... ``` (xem hướng dẫn trong file .md).\n');
+    console.error(`\n\x1b[31m[ERROR] No \`\`\`automation\`\`\` block found in ${mdRel}\x1b[0m`);
+    console.error('   -> Add an ```automation ... ``` block (see instructions in the .md file).\n');
     process.exit(1);
   }
   const scenarioMap = new Map(scenarios.map((s) => [s.id, s]));
@@ -430,9 +419,9 @@ function main() {
   const code = renderSpec(key, pageInfo, pom.baseFallback, scenarios, scenarioMap, mdRel, errors);
 
   if (errors.length) {
-    console.error(`\n\x1b[31m❌ ${errors.length} error(s) translating scenario — spec was NOT written:\x1b[0m`);
-    for (const e of errors) console.error(`   • ${e}`);
-    console.error('\n   → Sửa các dòng trên trong file .md rồi chạy lại. (Xem method/locator hợp lệ ở thông báo.)\n');
+    console.error(`\n\x1b[31m[ERROR] ${errors.length} error(s) translating scenario -- spec was NOT written:\x1b[0m`);
+    for (const e of errors) console.error(`   * ${e}`);
+    console.error('\n   -> Fix the lines above in the .md file and re-run. (See valid methods/locators in the messages above.)\n');
     process.exit(1);
   }
 
@@ -452,10 +441,10 @@ function main() {
   fs.mkdirSync(specDir, { recursive: true });
   fs.writeFileSync(specFull, code, 'utf-8');
 
-  console.log(`\n\x1b[32m✅ ${existed ? 'Updated' : 'Generated'} spec: ${specRel}\x1b[0m`);
+  console.log(`\n\x1b[32m[OK] ${existed ? 'Updated' : 'Generated'} spec: ${specRel}\x1b[0m`);
   console.log(`   Source: ${mdRel}  |  Page Object: ${pageInfo.pomRel}`);
   console.log(`   Scenarios: ${scenarios.length} (${scenarios.map((s) => s.id).join(', ')})`);
-  console.log('\n➡️  Run DIRECTLY with UI (supports manual SSO hand-off):');
+  console.log('\n[NEXT] Run DIRECTLY with UI (supports manual SSO hand-off):');
   console.log(`      npm run test:function ${key}\n`);
 }
 

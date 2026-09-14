@@ -412,9 +412,9 @@ function createSubtask() {
   }
   const result = spawnSync(nodeBin, args, { stdio: 'inherit', shell: false, cwd: ROOT_DIR });
   if (result.error) {
-    console.warn(`\x1b[33m⚠️  Sub-task creation could not be started: ${result.error.message} (bỏ qua, không chặn pipeline)\x1b[0m`);
+    console.warn(`\x1b[33m⚠️  Sub-task creation could not be started: ${result.error.message} (skipped, non-blocking)\x1b[0m`);
   } else if (result.status !== 0) {
-    console.warn(`\x1b[33m⚠️  Sub-task creation exited with code ${result.status} (bỏ qua, không chặn pipeline)\x1b[0m`);
+    console.warn(`\x1b[33m⚠️  Sub-task creation exited with code ${result.status} (skipped, non-blocking)\x1b[0m`);
   }
 }
 
@@ -684,17 +684,17 @@ Generate or update these files now.`;
     // spec file is the CORRECT, expected behavior, not a pipeline bug.
     if (detectBlocker(key, copilotOutput)) {
       printHeader(`🔴 STORY BỊ CHẶN DO CÓ OPEN QUESTIONS / BLOCKER — \x1b[36m${key}\x1b[0m`);
-      console.log(`\x1b[33m🔴 STORY BỊ CHẶN DO CÓ OPEN QUESTIONS / BLOCKER.\x1b[0m`);
-      console.log(`\x1b[33mPipeline dừng lại đúng quy trình (xem README.md mục 11 - Giai đoạn 1).\x1b[0m`);
-      console.log(`\x1b[33mVui lòng gửi Bảng Câu Hỏi cho PO/BA để làm rõ trước khi sinh test.\x1b[0m`);
-      console.log(`\n📄 Xem chi tiết Bảng Câu Hỏi tại: docs/tickets/${key}.md (mục "## 🔴 Open Questions & Blockers").`);
-      console.log(`\n➡️  Sau khi PO/BA phản hồi (Giai đoạn 2):`);
-      console.log(`   1. Nếu PO sửa Jira      -> npm run fetch-jira ${key}`);
-      console.log(`      Nếu PO chốt qua chat -> ghi nhận vào docs/tickets/${key}.md`);
-      console.log(`   2. Chạy lại /analyze-story để Clear Gate.`);
-      console.log(`   3. Chạy /new-test để sinh testcase + spec.`);
-      console.log(`   4. Chạy lại: npm run auto-test ${key}`);
-      console.log(`\n\x1b[33m⛔ Đây KHÔNG phải lỗi kỹ thuật -- Pipeline dừng chủ động để bảo vệ chất lượng test.\x1b[0m`);
+      console.log(`\x1b[33m🔴 STORY BLOCKED DUE TO OPEN QUESTIONS / BLOCKER.\x1b[0m`);
+      console.log(`\x1b[33mPipeline paused per process (see README.md section 11 - Phase 1).\x1b[0m`);
+      console.log(`\x1b[33mPlease send the Questionnaire to PO/BA to clarify before generating test.\x1b[0m`);
+      console.log(`\n📄 View Questionnaire details at: docs/tickets/${key}.md (section '## Open Questions & Blockers').`);
+      console.log(`\n➡️  After PO/BA response (Phase 2):`);
+      console.log(`   1. If PO updates Jira     -> npm run fetch-jira ${key}`);
+      console.log(`      If PO confirms via chat -> note in docs/tickets/${key}.md`);
+      console.log(`   2. Re-run /analyze-story to Clear Gate.`);
+      console.log(`   3. Run /new-test to generate testcase + spec.`);
+      console.log(`   4. Re-run: npm run auto-test ${key}`);
+      console.log(`\n\x1b[33m⛔ This is NOT a technical error -- Pipeline intentionally paused to safeguard test quality.\x1b[0m`);
       console.log(`======================================================\n`);
       // Distinct exit code (2) so this can be told apart from a real crash/error
       // (exit code 1) in CI or by any wrapping script/dashboard.

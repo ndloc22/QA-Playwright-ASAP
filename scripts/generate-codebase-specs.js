@@ -224,7 +224,7 @@ function extractProcessSpec(filePath, sourceRoot) {
   try {
     json = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   } catch (err) {
-    console.warn(`   ⚠️  Bỏ qua (JSON lỗi): ${filePath} — ${err.message}`);
+    console.warn(`   [WARN] Skipped (JSON error): ${filePath} — ${err.message}`);
     return null;
   }
 
@@ -257,12 +257,12 @@ function main() {
   console.log('======================================================');
   console.log(' Axon Ivy Codebase OpenSpecs Extractor');
   console.log('======================================================');
-  console.log(`Nguồn (READ-ONLY): ${sourceRoot}`);
-  console.log(`Đích:              ${path.relative(process.cwd(), OUTPUT_DIR)}`);
+  console.log(`Source (READ-ONLY): ${sourceRoot}`);
+  console.log(`Output:             ${path.relative(process.cwd(), OUTPUT_DIR)}`);
   console.log('');
 
   if (!fs.existsSync(sourceRoot)) {
-    console.error(`❌ Không tìm thấy thư mục nguồn: ${sourceRoot}\n\n` +
+    console.error(`[ERROR] Source folder not found: ${sourceRoot}\n\n` +
       '💡 Hướng dẫn:\n' +
       '   1. Chạy kèm cờ --source trỏ tới thư mục source Axon Ivy của ASAP trên máy bạn:\n' +
       '      npm run generate-codebase-specs -- --source "C:\\path\\to\\asap\\source"\n\n' +
@@ -274,7 +274,7 @@ function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
   // --- 1. Quét *.xhtml ---
-  console.log('🔎 Đang quét *.xhtml (dialogs)...');
+  console.log('[INFO] Scanning *.xhtml (dialogs)...');
   const xhtmlFiles = walk(sourceRoot, ['.xhtml'], []);
   const dialogs = [];
   for (const file of xhtmlFiles) {
@@ -282,11 +282,11 @@ function main() {
       const spec = extractXhtmlSpec(file, sourceRoot);
       if (spec) dialogs.push(spec);
     } catch (err) {
-      console.warn(`   ⚠️  Bỏ qua ${file}: ${err.message}`);
+      console.warn(`   [WARN] Skipped ${file}: ${err.message}`);
     }
   }
   dialogs.sort((a, b) => a.name.localeCompare(b.name));
-  console.log(`   ✅ Đã quét ${xhtmlFiles.length} file .xhtml, trích xuất được ${dialogs.length} dialog có component.`);
+  console.log(`   [OK] Scanned ${xhtmlFiles.length} .xhtml files, extracted ${dialogs.length} dialogs with components.`);
 
   const totalComponents = dialogs.reduce((sum, d) => sum + d.componentCount, 0);
 
@@ -299,7 +299,7 @@ function main() {
   };
 
   // --- 2. Quét *.p.json ---
-  console.log('🔎 Đang quét *.p.json (processes)...');
+  console.log('[INFO] Scanning *.p.json (processes)...');
   const processFiles = walk(sourceRoot, ['.p.json'], []);
   const processes = [];
   for (const file of processFiles) {
@@ -307,11 +307,11 @@ function main() {
       const spec = extractProcessSpec(file, sourceRoot);
       if (spec) processes.push(spec);
     } catch (err) {
-      console.warn(`   ⚠️  Bỏ qua ${file}: ${err.message}`);
+      console.warn(`   [WARN] Skipped ${file}: ${err.message}`);
     }
   }
   processes.sort((a, b) => a.name.localeCompare(b.name));
-  console.log(`   ✅ Đã quét ${processFiles.length} file .p.json, trích xuất được ${processes.length} process có task/transition.`);
+  console.log(`   [OK] Scanned ${processFiles.length} .p.json files, extracted ${processes.length} processes with tasks/transitions.`);
 
   const totalTasks = processes.reduce((sum, p) => sum + p.taskCount, 0);
   const totalTransitions = processes.reduce((sum, p) => sum + p.transitionCount, 0);
@@ -337,11 +337,11 @@ function main() {
 
   console.log('');
   console.log('======================================================');
-  console.log(' Kết quả');
+  console.log(' Results');
   console.log('======================================================');
   console.log(`📄 ${path.relative(process.cwd(), uiComponentsPath)}  (${dialogs.length} dialog, ${totalComponents} component)`);
   console.log(`📄 ${path.relative(process.cwd(), stateMachinePath)}  (${processes.length} process, ${totalTasks} task, ${totalTransitions} transition, ${allRoles.size} role)`);
-  console.log('\n🎉 Sinh OpenSpecs codebase thành công!\n');
+  console.log('\nGenerated OpenSpecs codebase successfully!\n');
 }
 
 main();

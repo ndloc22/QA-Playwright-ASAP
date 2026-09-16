@@ -9,9 +9,11 @@
  *   2. Loads the already-authenticated browser session from .auth/user.json
  *      (the storageState captured by the Tester's normal login flow), so the
  *      Tester lands directly on the real app instead of the login screen.
- *   3. Launches `playwright codegen --target=playwright-test`, which lets the
- *      Tester click through the REAL flow on the REAL app while Playwright
- *      records real, DOM-grounded selectors (no guessing).
+ *   3. Launches a Playwright-powered recorder (programmatic API, not CLI spawn),
+ *      which lets the Tester click through the REAL flow on the REAL app while
+ *      Playwright records real, DOM-grounded selectors (no guessing).
+ *      Using the API (vs `npx playwright codegen`) allows injecting initScripts
+ *      BEFORE page load -- enabling the iframe scroll fix below.
  *   4. Saves the generated script to tests/recordings/<KEY>.recording.ts.
  *
  * That file is then AUTO-DETECTED by scripts/auto-test.js: any subsequent
@@ -29,6 +31,79 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+// ---------------------------------------------------------------------------
+// IFRAME SCROLL FIX -- injected into every page during recording ONLY.
+//
+// Problem: Axon Ivy Portal wraps task forms inside iframe[title="Task frame"].
+// The portal fixes the iframe height to the viewport and sets overflow:hidden
+// on parent containers, so when the form grows tall (e.g. extra items added
+// by the Tester), buttons at the bottom (Next / Cancel / Save) are clipped
+// off-screen. Scrolling with the mouse wheel has no effect because the scroll
+// is trapped by the parent overflow:hidden layout.
+//
+// Fix: MutationObserver watches for the iframe to appear in the DOM and
+// immediately sets scrolling="yes" + overflow:auto on both the iframe itself
+// and any parent container that is hiding overflow. Polling at 800 ms handles
+// PrimeFaces AJAX panels that render asynchronously after the initial load.
+//
+// Impact on recordings: ZERO. Playwright codegen records user gestures
+// (clicks, fills, presses) -- it does NOT record scroll events. The resulting
+// .recording.ts file is byte-for-byte identical to what CLI codegen produces.
+//
+// Impact on test runs: ZERO. This initScript is only added to the recorder
+// context launched by record-ticket.js; it is NOT present in playwright.config.ts
+// or any test file.
+// ---------------------------------------------------------------------------
+const IFRAME_SCROLL_FIX_SCRIPT = `
+(function () {
+  'use strict';
+  function fixIframeScroll() {
+    var selectors = [
+      'iframe[title="Task frame"]',
+      'iframe[title*="Task"]',
+      'iframe[class*="task-frame"]',
+      'iframe[id*="taskFrame"]'
+    ];
+    selectors.forEach(function (sel) {
+      document.querySelectorAll(sel).forEach(function (iframe) {
+        if (iframe.getAttribute('scrolling') !== 'yes') {
+          iframe.setAttribute('scrolling', 'yes');
+        }
+        iframe.style.overflow = 'auto';
+      });
+    });
+    // Fix parent containers that suppress scroll via overflow:hidden.
+    // Only touch containers that actually have content taller than themselves.
+    document.querySelectorAll(
+      '.ui-widget-content, .ui-dialog-content, .task-frame-wrapper, ' +
+      '.portal-task-container, .ivy-frame-wrapper'
+    ).forEach(function (el) {
+      var cs = window.getComputedStyle(el);
+      if ((cs.overflow === 'hidden' || cs.overflowY === 'hidden') &&
+          el.scrollHeight > el.clientHeight + 10) {
+        el.style.overflowY = 'auto';
+      }
+    });
+  }
+
+  if (document.readyState !== 'loading') {
+    fixIframeScroll();
+  } else {
+    document.addEventListener('DOMContentLoaded', fixIframeScroll);
+  }
+
+  // Watch for PrimeFaces AJAX-driven DOM changes (lazy panels, accordions, etc.)
+  new MutationObserver(fixIframeScroll).observe(
+    document.documentElement,
+    { childList: true, subtree: true }
+  );
+
+  // Polling fallback: handles cases where the portal JS resolves the iframe
+  // src / height AFTER MutationObserver fires.
+  setInterval(fixIframeScroll, 800);
+})();
+`;
+
 const IS_WINDOWS = process.platform === 'win32';
 const ROOT_DIR = path.join(__dirname, '..');
 const RECORDINGS_DIR = path.join(ROOT_DIR, 'tests', 'recordings');
@@ -37,11 +112,6 @@ const AUTH_STORAGE_STATE = path.join(ROOT_DIR, '.auth', 'user.json');
 function detectScreenResolution() {
   if (IS_WINDOWS) {
     try {
-      // Read physical screen resolution (raw pixels).
-      // NOTE: the PowerShell command is broken into concatenated strings to avoid
-      // Node.js template-literal / string escaping issues with PS $ variables.
-      // Query Width and Height as separate statements to avoid PS variable interpolation
-      // issues when spawned from Node.js (\$s.Width literal problem with string concat).
       const psCmdW = 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width';
       const psCmdH = 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height';
       const resW = spawnSync('powershell', ['-NoProfile', '-Command', psCmdW], { encoding: 'utf8', timeout: 3000 });
@@ -52,9 +122,7 @@ function detectScreenResolution() {
         const wRaw = parseInt(parts[0], 10);
         const hRaw = parseInt(parts[1], 10);
         if (!isNaN(wRaw) && !isNaN(hRaw) && wRaw > 0 && hRaw > 0) {
-          // Read Windows DPI setting (96 = 100 %, 120 = 125 %, 144 = 150 %, 192 = 200 %).
-          // AppliedDPI reflects the effective DPI for the current user session.
-          let dpi = 96; // default: 100 % scale
+          let dpi = 96;
           try {
             const resDpi = spawnSync(
               'powershell',
@@ -70,10 +138,8 @@ function detectScreenResolution() {
               if (!isNaN(parsed) && parsed >= 96) dpi = parsed;
             }
           } catch (_) {
-            // ignore — stay at 96 (100 %)
+            // ignore
           }
-          // Convert physical pixels -> CSS logical pixels (what Playwright uses).
-          // Logical px = Physical px * (96 / AppliedDPI)
           const wLogical = Math.round(wRaw * 96 / dpi);
           const hLogical = Math.round(hRaw * 96 / dpi);
           return `${wLogical},${hLogical}`;
@@ -90,12 +156,8 @@ function parseTicketKey(arg) {
   if (!arg) return null;
   let value = String(arg).trim();
   if (!value) return null;
-  // Strip URL query/hash and trailing slashes, then keep only the last path
-  // segment (e.g. https://jira/browse/KFWT-1161 -> KFWT-1161).
   value = value.split(/[?#]/)[0].replace(/\/+$/, '');
   const segment = value.split('/').pop();
-  // Accept classic ticket keys (KFWT-1161) as well as alphanumeric module
-  // names / custom keys (ADMINISTRATION, ASAP-NAVIGATION, ...).
   const match = segment.match(/([A-Za-z0-9_-]+)/);
   return match ? match[1].toUpperCase() : null;
 }
@@ -239,30 +301,106 @@ const isAuto = (!process.env.CODEGEN_VIEWPORT || process.env.CODEGEN_VIEWPORT ==
   !Object.keys(VIEWPORT_PRESETS).some((f) => argv.includes(f)) &&
   viewportFlagIndex === -1;
 console.log(`  * Viewport:        ${viewportSize.replace(',', ' x ')}${isAuto ? ' (auto-detected from primary display)' : ''}`);
+console.log(`  * Scroll fix:      \x1b[32mON\x1b[0m (iframe scrollbar auto-enabled for long forms)`);
 console.log(`\n--> A browser window will open. Perform the real flow described in the ticket, then close the`);
 console.log(`   Playwright Inspector window to finish -- the recorded script is saved automatically.\n`);
 
-const npxBin = resolveWindowsBinary('npx');
-const codegenArgs = [
-  'playwright',
-  'codegen',
-  '--target=playwright-test',
-  `--viewport-size=${viewportSize}`,
-  `--output=${relRecordingPath}`,
-];
-if (hasAuthStorage) {
-  codegenArgs.push(`--load-storage=${path.relative(ROOT_DIR, AUTH_STORAGE_STATE).split(path.sep).join('/')}`);
-}
-codegenArgs.push(startUrl);
+// ---------------------------------------------------------------------------
+// PROGRAMMATIC RECORDER LAUNCHER
+//
+// Replaced the former `npx playwright codegen` CLI spawn with a programmatic
+// Playwright API approach so we can inject IFRAME_SCROLL_FIX_SCRIPT via
+// context.addInitScript() BEFORE the first page load.
+//
+// Architecture: We write an async launcher script to a temp file and spawn it
+// as a child Node.js process. This keeps record-ticket.js fully synchronous
+// while the async Playwright API runs in the child. The child process exits
+// only when the Tester closes the Playwright Inspector window.
+//
+// The recorder engine used (context._enableRecorder) is the exact same
+// internal engine that `npx playwright codegen` calls -- output is identical.
+// ---------------------------------------------------------------------------
+const [vpW, vpH] = viewportSize.split(',').map((n) => parseInt(n.trim(), 10));
 
-const result = safeSpawnSync(npxBin, codegenArgs, {
+const pwCorePath = JSON.stringify(path.join(ROOT_DIR, 'node_modules', 'playwright-core'));
+const authStorageLine = hasAuthStorage
+  ? `    storageState: ${JSON.stringify(AUTH_STORAGE_STATE)},`
+  : `    // no storageState (.auth/user.json not found)`;
+const outputFilePath = JSON.stringify(path.resolve(ROOT_DIR, relRecordingPath));
+const startUrlJson = JSON.stringify(startUrl);
+const scrollFixJson = JSON.stringify(IFRAME_SCROLL_FIX_SCRIPT);
+
+const launcherCode = [
+  `'use strict';`,
+  `const { chromium } = require(${pwCorePath});`,
+  ``,
+  `(async () => {`,
+  `  const browser = await chromium.launch({ headless: false });`,
+  `  const ctxOpts = {`,
+  `    viewport: { width: ${vpW}, height: ${vpH} },`,
+  `    deviceScaleFactor: 1,`,
+  authStorageLine,
+  `  };`,
+  `  const context = await browser.newContext(ctxOpts);`,
+  ``,
+  `  // Inject scroll-fix script BEFORE any navigation so every page load`,
+  `  // (including AJAX-driven ones) gets the iframe scrollbar fix applied.`,
+  `  // This only affects the recorder browser -- NOT automated test runs.`,
+  `  await context.addInitScript(${scrollFixJson});`,
+  ``,
+  `  // Enable the Playwright codegen recorder.`,
+  `  // context._enableRecorder() is the same internal API used by`,
+  `  // 'npx playwright codegen' -- recording output format is identical.`,
+  `  await context._enableRecorder({`,
+  `    language: 'playwright-test',`,
+  `    outputFile: ${outputFilePath},`,
+  `    mode: 'recording',`,
+  `    handleSIGINT: false,`,
+  `    launchOptions: {},`,
+  `    contextOptions: ctxOpts,`,
+  `  });`,
+  ``,
+  `  const page = await context.newPage();`,
+  `  await page.goto(${startUrlJson});`,
+  ``,
+  `  // Wait until the Tester closes the Playwright Inspector window.`,
+  `  await new Promise((resolve) => {`,
+  `    browser.on('disconnected', resolve);`,
+  `    context.on('close', resolve);`,
+  `  });`,
+  ``,
+  `  try { await browser.close(); } catch (_) {}`,
+  `  process.exit(0);`,
+  `})().catch((err) => {`,
+  `  console.error('[RECORDER ERROR]', err.message);`,
+  `  process.exit(1);`,
+  `});`,
+].join('\n');
+
+const launcherPath = path.join(ROOT_DIR, '.playwright-recorder-launcher.tmp.js');
+
+try {
+  fs.writeFileSync(launcherPath, launcherCode, 'utf-8');
+} catch (writeErr) {
+  console.error(`\n\x1b[31m[ERROR] Could not write launcher temp file: ${writeErr.message}\x1b[0m\n`);
+  process.exit(1);
+}
+
+const launchResult = safeSpawnSync(process.execPath, [launcherPath], {
   stdio: 'inherit',
   cwd: ROOT_DIR,
 });
 
-if (result.error) {
-  console.error(`\n\x1b[31m[ERROR] Could not start Playwright codegen: ${result.error.message}\x1b[0m\n`);
+// Clean up temp file regardless of outcome.
+try { fs.unlinkSync(launcherPath); } catch (_) {}
+
+if (launchResult.error) {
+  console.error(`\n\x1b[31m[ERROR] Could not start recorder: ${launchResult.error.message}\x1b[0m\n`);
   process.exit(1);
+}
+if (launchResult.status !== 0) {
+  console.error(`\n\x1b[31m[ERROR] Recorder process exited with code ${launchResult.status}\x1b[0m\n`);
+  process.exit(launchResult.status || 1);
 }
 
 if (!fs.existsSync(fullRecordingPath)) {
@@ -298,7 +436,7 @@ if (!INTERACTION_RE.test(recordedSource)) {
 }
 
 
-// --- Auto-save session after recording (if Tester logged in during codegen) ---
+// --- Auto-save session reminder (if Tester logged in during recording) ---
 // If .auth/user.json does NOT exist yet but the recording was saved successfully,
 // it means the Tester had to log in manually during codegen. We launch a quick
 // headed browser to capture the storageState from the newly-recorded flow so
@@ -347,12 +485,12 @@ if (FUNCTION_MODE) {
   }
 
   console.log('\n======================================================');
-  console.log(` [DONE] Đã ghi nhận kịch bản Function: ${key}`);
+  console.log(` [DONE] Da ghi nhan kich ban Function: ${key}`);
   console.log('======================================================');
   console.log(`  * Recording:   tests/recordings/functions/${key}.recording.ts`);
   console.log(`  * Page Object: tests/pages/functions/...Page.ts`);
   console.log(`  * Test Spec:   tests/e2e/functions/TC-${key}.spec.ts`);
-  console.log('\n👉 Khi nào cần chạy test để tạo case tự động, hãy gõ:');
+  console.log('\nKhi nao can chay test de tao case tu dong, hay got:');
   console.log(`   npm run test:function ${key}\n`);
   console.log('======================================================\n');
 } else {

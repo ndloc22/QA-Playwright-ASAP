@@ -37,12 +37,46 @@ const AUTH_STORAGE_STATE = path.join(ROOT_DIR, '.auth', 'user.json');
 function detectScreenResolution() {
   if (IS_WINDOWS) {
     try {
-      const psCmd = 'Add-Type -AssemblyName System.Windows.Forms; $s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "$($s.Width),$($s.Height)"';
-      const res = spawnSync('powershell', ['-NoProfile', '-Command', psCmd], { encoding: 'utf8', timeout: 3000 });
-      if (!res.error && res.stdout) {
-        const match = res.stdout.trim().match(/^(\d+),(\d+)$/);
-        if (match) {
-          return `${match[1]},${match[2]}`;
+      // Read physical screen resolution (raw pixels).
+      // NOTE: the PowerShell command is broken into concatenated strings to avoid
+      // Node.js template-literal / string escaping issues with PS $ variables.
+      // Query Width and Height as separate statements to avoid PS variable interpolation
+      // issues when spawned from Node.js (\$s.Width literal problem with string concat).
+      const psCmdW = 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width';
+      const psCmdH = 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height';
+      const resW = spawnSync('powershell', ['-NoProfile', '-Command', psCmdW], { encoding: 'utf8', timeout: 3000 });
+      const resH = spawnSync('powershell', ['-NoProfile', '-Command', psCmdH], { encoding: 'utf8', timeout: 3000 });
+      const resBounds = { error: resW.error || resH.error, stdout: resW.stdout + ',' + resH.stdout };
+      if (!resBounds.error && resBounds.stdout) {
+        const parts = resBounds.stdout.trim().split(',').map(s => s.trim());
+        const wRaw = parseInt(parts[0], 10);
+        const hRaw = parseInt(parts[1], 10);
+        if (!isNaN(wRaw) && !isNaN(hRaw) && wRaw > 0 && hRaw > 0) {
+          // Read Windows DPI setting (96 = 100 %, 120 = 125 %, 144 = 150 %, 192 = 200 %).
+          // AppliedDPI reflects the effective DPI for the current user session.
+          let dpi = 96; // default: 100 % scale
+          try {
+            const resDpi = spawnSync(
+              'powershell',
+              [
+                '-NoProfile',
+                '-Command',
+                "Get-ItemPropertyValue -Path 'HKCU:\\Control Panel\\Desktop\\WindowMetrics' -Name 'AppliedDPI' -ErrorAction Stop"
+              ],
+              { encoding: 'utf8', timeout: 3000 }
+            );
+            if (!resDpi.error && resDpi.stdout) {
+              const parsed = parseInt(resDpi.stdout.trim(), 10);
+              if (!isNaN(parsed) && parsed >= 96) dpi = parsed;
+            }
+          } catch (_) {
+            // ignore — stay at 96 (100 %)
+          }
+          // Convert physical pixels -> CSS logical pixels (what Playwright uses).
+          // Logical px = Physical px * (96 / AppliedDPI)
+          const wLogical = Math.round(wRaw * 96 / dpi);
+          const hLogical = Math.round(hRaw * 96 / dpi);
+          return `${wLogical},${hLogical}`;
         }
       }
     } catch (e) {
@@ -251,6 +285,16 @@ if (!INTERACTION_RE.test(recordedSource)) {
   console.warn(`\n\x1b[33m[WARN] This recording has no recorded interactions (only the initial navigation).\x1b[0m`);
   console.warn(`   -> regenerate/auto-test will NOT treat it as Grounding Truth and will NOT remove test.fixme() guards.`);
   console.warn(`   -> Re-run "npm run ${RECORD_CMD} ${key}" and click/fill at least one element before closing the recorder.\n`);
+  if (FUNCTION_MODE) {
+    // In FUNCTION_MODE the auto-hook (sync-specs + run-function) would launch a browser
+    // that immediately closes because there is nothing to run.
+    // This flash-and-close confuses testers ("browser opened then vanished") and prints
+    // a false [DONE] banner. Exit here with a clear actionable error message instead.
+    console.error(`\n\x1b[31m[ERROR] Function recording is empty -- auto-hook ABORTED.\x1b[0m`);
+    console.error(`   -> Please re-run: npm run record:function ${key}`);
+    console.error(`   -> Perform at least one click/fill inside the ASAP form before closing the Playwright Inspector window.\n`);
+    process.exit(1);
+  }
 }
 
 
@@ -275,12 +319,13 @@ if (FUNCTION_MODE) {
   // -----------------------------------------------------------------
   const nodeBin = process.execPath;
   const syncSpecsScript = path.join(__dirname, 'sync-specs.js');
+  const mdToSpecScript = path.join(__dirname, 'md-to-spec.js');
   const runFunctionScript = path.join(__dirname, 'run-function.js');
 
   console.log(`\n[AUTO] Starting automatic sync-specs for: ${key}`);
   console.log(`   -> Generating Page Object and Test Spec from recording...`);
 
-  const syncResult = safeSpawnSync(nodeBin, [syncSpecsScript, key], {
+  const syncResult = safeSpawnSync(nodeBin, [syncSpecsScript, key, '--force-pom', '--force-spec', '--force-md'], {
     stdio: 'inherit',
     cwd: ROOT_DIR,
   });
@@ -291,27 +336,24 @@ if (FUNCTION_MODE) {
     process.exit(syncResult.status ?? 1);
   }
 
-  console.log(`\n[AUTO] sync-specs completed. Starting automatic verify run (headed)...`);
-
-  const runResult = safeSpawnSync(nodeBin, [runFunctionScript, key], {
+  console.log(`\n[AUTO] Compiling Markdown BDD scenarios to executable Playwright spec...`);
+  const mdResult = safeSpawnSync(nodeBin, [mdToSpecScript, key], {
     stdio: 'inherit',
     cwd: ROOT_DIR,
-    env: { ...process.env, INTERACTIVE_SSO: '1' },
   });
 
-  const runPassed = !runResult.error && runResult.status === 0;
+  if (mdResult.error || mdResult.status !== 0) {
+    console.warn(`\n[WARN] md-to-spec exited with code ${mdResult.status ?? 'N/A'}.`);
+  }
+
   console.log('\n======================================================');
-  console.log(` [DONE] Function: ${key}`);
+  console.log(` [DONE] Đã ghi nhận kịch bản Function: ${key}`);
   console.log('======================================================');
   console.log(`  * Recording:   tests/recordings/functions/${key}.recording.ts`);
   console.log(`  * Page Object: tests/pages/functions/...Page.ts`);
   console.log(`  * Test Spec:   tests/e2e/functions/TC-${key}.spec.ts`);
-  if (runPassed) {
-    console.log(`  * Verify:      [PASSED] Function verified end-to-end.`);
-  } else {
-    console.log(`  * Verify:      [WARN] Verify run did not pass (exit ${runResult.status ?? 'N/A'}).`);
-    console.log(`     -> Check the headed browser output, or re-run: npm run test:function ${key}`);
-  }
+  console.log('\n👉 Khi nào cần chạy test để tạo case tự động, hãy gõ:');
+  console.log(`   npm run test:function ${key}\n`);
   console.log('======================================================\n');
 } else {
   console.log(`\n[NEXT] Next step -- regenerate the Page Object + Test Spec grounded in this recording:`);

@@ -325,8 +325,18 @@ function extractComponents(source, key) {
  * Tìm URL điều hướng đầu tiên (page.goto) để lưu như "screen entry point".
  */
 function extractEntryUrl(source) {
-  const m = source.match(/\.goto\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1/);
-  return m ? m[2] : null;
+  const re = /\.goto\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1/g;
+  const urls = [];
+  let match;
+  while ((match = re.exec(source)) !== null) {
+    urls.push(match[2]);
+  }
+  if (!urls.length) return null;
+  // Prefer the first non-SSO / non-IdP URL (e.g. ASAP portal URL instead of login.microsoftonline.com)
+  const isSso = (u) =>
+    /login\.microsoft|login\.live|login\.windows|\/oauth2\/|\/adfs\/|okta\.com|auth0\.com/i.test(u);
+  const appUrl = urls.find((u) => !isSso(u));
+  return appUrl || urls[0];
 }
 
 /**
@@ -433,12 +443,54 @@ function roleSuffix(comp) {
  * Tên member gợi nhớ cho 1 locator (chưa đảm bảo unique).
  */
 function deriveBaseName(comp) {
+  if (comp.locatorType === 'raw' && comp.rawExpr) {
+    const raw = comp.rawExpr;
+    if (/name:\s*['"]Start Process['"]/i.test(raw)) return 'startProcessMenuitem';
+    const roleMatch = raw.match(/getByRole\(\s*['"]([^'"]+)['"](?:\s*,\s*\{\s*name:\s*(?:['"]([^'"]+)['"]|\/([^/]+)\/)\s*\})?/);
+    const filterMatch = raw.match(/\.filter\(\s*\{\s*hasText:\s*['"]([^'"]+)['"]/);
+    const textMatch = raw.match(/getByText\(\s*['"]([^'"]+)['"]/);
+
+    if (roleMatch) {
+      const role = roleMatch[1];
+      let name = (roleMatch[2] || roleMatch[3] || '').replace(/[^\w\s]/g, '').trim();
+      if (!name && filterMatch) {
+        name = filterMatch[1].slice(0, 25).replace(/[^\w\s]/g, '').trim();
+      }
+      if (name) return camelIdentifier(name) + pascal(role);
+      return camelIdentifier(role);
+    }
+    if (textMatch) {
+      const text = textMatch[1].slice(0, 30).replace(/[^\w\s]/g, '').trim();
+      return camelIdentifier(text) + 'Text';
+    }
+    if (filterMatch) {
+      const text = filterMatch[1].slice(0, 30).replace(/[^\w\s]/g, '').trim();
+      return camelIdentifier(text) + 'Element';
+    }
+    const idMatch = raw.match(/\[id=['"]([^'"]+)['"]\]/);
+    if (idMatch) {
+      const id = idMatch[1].split(':').pop();
+      return camelIdentifier(id) + 'Element';
+    }
+    const nthMatch = raw.match(/([a-z]+):nth-child\((\d+)\)(?:\s*>\s*([a-z]+))?/i);
+    if (nthMatch) {
+      const tag = nthMatch[3] || nthMatch[1];
+      const n = nthMatch[2];
+      return camelIdentifier(`${tag}Nth${n}`);
+    }
+    const classMatch = raw.match(/\.([\w-]+)/);
+    if (classMatch) {
+      return camelIdentifier(classMatch[1]) + 'Element';
+    }
+    return 'actionElement';
+  }
+
   let base = comp.name || comp.text || '';
   if (!base && comp.css) {
     const id = comp.primefacesId || comp.css;
     const seg = id
-      .replace(/\[id=|["'\]]/g, '')
-      .split(/[:.\s>#[\]]+/)
+      .replace(/\[id=|[\"'\]]/g, '')
+      .split(/[:.\s>#\[\]]+/)
       .filter(Boolean)
       .pop();
     base = seg || 'element';
@@ -501,16 +553,26 @@ function parseCleanLocator(portion) {
   };
 
   if (engine === 'locator') {
-    const css = strArg.value;
-    // Chỉ nhận CSS dựa trên id (#... hoặc [id="..."]) -- bỏ qua selector class/combinator
-    // của codegen (.ui-chkbox-box, .ui-g-1 > a...) vì chúng là "nhiễu" không bền vững.
-    if (!/^\[id=/.test(css) && !/^#/.test(css)) return null;
+    let css = strArg.value;
+    // Làm sạch các class hover/focus/active tạm thời do chuột rê sinh ra lúc record
+    css = css.replace(/\.ui-state-(?:hover|focus|active)\b/g, '').trim();
+
+    // Nhận diện selector theo ID (#... hoặc [id="..."]) VÀ các component tương tác PrimeFaces (radio, checkbox)
+    const isId = /^\[id=/.test(css) || /^#/.test(css);
+    const isPrimeFacesInteractive = /\.ui-(?:radiobutton|chkbox)(?:-box|-icon)?\b/.test(css);
+
+    if (!isId && !isPrimeFacesInteractive) return null;
+
     let i = strArg.endIdx;
     while (i < portion.length && /\s/.test(portion[i])) i++;
     if (portion[i] !== ')') return null;
     comp.locatorType = 'css';
     comp.css = css;
     comp.primefacesId = extractPrimefacesId(css);
+    if (isPrimeFacesInteractive) {
+      if (css.includes('radiobutton')) comp.role = 'radio';
+      else if (css.includes('chkbox')) comp.role = 'checkbox';
+    }
     return { comp, endIdx: i + 1 };
   }
 
@@ -551,91 +613,168 @@ function extractPomModel(source) {
   const frameTitle = frameMatch ? frameMatch[1] : null;
   const lines = source.split(/\r?\n/);
   const bySig = new Map();
+  const recordedSteps = [];
+  const used = new Set(['page', 'frame', 'constructor']);
 
   for (const raw of lines) {
     const line = raw.trim();
     if (!/^await\s+page\./.test(line)) continue;
 
-    const isFrame = /contentFrame\(\)/.test(line);
-    let frameSelector = null;
-    let portion;
-    if (isFrame) {
-      const idx = line.lastIndexOf('.contentFrame()');
-      const framePart = line.slice(0, idx);
-      const selMatch = framePart.match(/\.locator\('([^']+)'\)/) || framePart.match(/\.locator\("([^"]+)"\)/);
-      frameSelector = selMatch ? selMatch[1] : (frameTitle ? `iframe[title="${frameTitle}"]` : null);
-      portion = line.slice(idx + '.contentFrame()'.length).replace(/^\./, '');
-    } else {
-      portion = line.replace(/^await\s+page\./, '');
-    }
-    portion = portion.replace(/;\s*$/, '').trim();
+    // Skip Microsoft SSO / Login steps (handled exclusively by ensureAuthenticated/ensureInteractiveAuth)
+    if (/login\.microsoftonline\.com/.test(line) || /Enter the password/.test(line) || /Sign in/.test(line)) continue;
+    // Skip ephemeral navigation URLs (handled by ensureAuthenticated)
+    if (/page\.goto\(/.test(line)) continue;
 
-    const parsed = parseCleanLocator(portion);
-    if (!parsed) continue;
-
-    const rest = portion.slice(parsed.endIdx);
-    let chain = '';
-    const chainMatch = rest.match(/^\.(first|last)\(\)|^\.nth\(\s*\d+\s*\)/);
-    let actionSlice = rest;
-    if (chainMatch) {
-      chain = chainMatch[0];
-      actionSlice = rest.slice(chain.length);
-    }
-    const actionMatch = actionSlice.match(
-      /^\.(click|dblclick|fill|type|press|check|uncheck|selectOption|hover|focus|tap)\s*\(/
+    const actionMatch = line.match(
+      /\.(click|dblclick|fill|type|press|check|uncheck|selectOption|hover|focus|tap)\s*\((.*?)\)\s*;?\s*$/
     );
     if (!actionMatch) continue;
 
     const action = actionMatch[1];
-    const argStart = parsed.endIdx + chain.length + actionMatch[0].length;
-    const strArg = readStringArg(portion, argStart);
-    const value = strArg ? strArg.value : null;
+    const rawArg = actionMatch[2];
+    let value = null;
+    if (rawArg) {
+      const m = rawArg.match(/^(['"])(.*)\1$/);
+      value = m ? m[2] : rawArg.trim();
+    }
 
-    const comp = { ...parsed.comp, chain, frameSelector, isFrame };
+    const beforeAction = line.slice(0, line.lastIndexOf(actionMatch[0]));
+    const isFrame = beforeAction.includes('.contentFrame()');
+    let frameSelector = null;
+    let locatorPart = beforeAction.replace(/^await\s+page\./, '');
+
+    if (isFrame) {
+      const idx = beforeAction.lastIndexOf('.contentFrame()');
+      const framePart = beforeAction.slice(0, idx);
+      const selMatch = framePart.match(/\.locator\('([^']+)'\)/) || framePart.match(/\.locator\("([^"]+)"\)/);
+      frameSelector = selMatch ? selMatch[1] : (frameTitle ? `iframe[title="${frameTitle}"]` : null);
+      locatorPart = beforeAction.slice(idx + '.contentFrame().'.length);
+    }
+    locatorPart = locatorPart.replace(/;\s*$/, '').trim();
+
+    // Clean transient hover/focus/active classes
+    locatorPart = locatorPart.replace(/\.ui-state-(?:hover|focus|active)\b/g, '');
+
+    let comp = null;
+    const parsed = parseCleanLocator(locatorPart);
+    if (parsed && parsed.endIdx >= locatorPart.length) {
+      comp = { ...parsed.comp, chain: '', frameSelector, isFrame };
+    } else {
+      comp = {
+        locatorType: 'raw',
+        rawExpr: locatorPart,
+        role: null,
+        name: null,
+        text: null,
+        css: null,
+        primefacesId: null,
+        exact: false,
+        isFrame,
+        frameSelector,
+        chain: ''
+      };
+    }
+
     const sig = [
       isFrame ? (frameSelector || 'F') : 'P',
       comp.locatorType,
+      comp.rawExpr || '',
       comp.role || '',
       comp.name || comp.text || '',
       comp.css || '',
-      chain
+      comp.chain || ''
     ].join('|');
 
     let entry = bySig.get(sig);
     if (!entry) {
-      entry = { ...comp, actions: new Set(), values: [] };
+      const baseName = deriveBaseName(comp);
+      const member = uniqueName(baseName, used);
+      entry = { ...comp, member, actions: new Set(), values: [] };
       bySig.set(sig, entry);
     }
+
     entry.actions.add(action);
     if (value != null && value !== '' && !entry.values.includes(value)) {
       entry.values.push(value);
     }
+
+    recordedSteps.push({
+      member: entry.member,
+      action,
+      value
+    });
   }
 
   const locators = Array.from(bySig.values());
-  const used = new Set(['page', 'frame', 'constructor']);
-  for (const l of locators) {
-    l.member = uniqueName(deriveBaseName(l), used);
-  }
 
   return {
     frameTitle,
     hasFrame: locators.some((l) => l.isFrame),
-    locators
+    locators,
+    recordedSteps
   };
 }
 
 /**
  * Sinh biểu thức locator (không kèm prefix `this.page`/`this.frame`).
  */
+/**
+ * Detect if a locator name contains an ephemeral BPM task-instance ID
+ * (e.g. "RA11359", "APL212475") that changes after each Cancel / Submit.
+ * For such names we emit a /regex/i pattern so the locator stays green
+ * across re-runs when the system assigns a new task number.
+ */
+function hasEphemeralId(name) {
+  if (!name) return false;
+  // Match 4+ consecutive digits optionally preceded by known BPM prefixes.
+  return /\b(?:RA|APL|KFWT-?|ASAP-?|TC-?|SR-?|CR-?|[A-Z]{2,6}-?)?\d{4,}\b/.test(name);
+}
+
+/**
+ * Build a /regex/i pattern for a name containing an ephemeral number.
+ * Strategy: use the stable descriptive text that follows the ephemeral ID.
+ *
+ * "Task start - Prio: NORMAL - Task name: RA11359 - Create risk request for"
+ *   => /Create risk request for/i
+ */
+function stableRegexForEphemeral(name) {
+  // Strip the ephemeral prefix (everything up to and including the ID + separator).
+  const afterId = name.replace(/^.*?(?:RA|APL|[A-Z]{1,6}-?)\d{4,}\s*[-:]?\s*/i, '').trim();
+  if (afterId.length > 5) {
+    const esc = afterId.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m);
+    return '/' + esc + '/i';
+  }
+  // Fallback: replace digit runs in the full name with \d+ pattern.
+  const esc = name.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m).replace(/\d+/g, '\\d+');
+  return '/' + esc + '/i';
+}
 function locatorExpr(comp) {
   const t = comp.locatorType;
+  if (t === 'raw') {
+    return '.' + comp.rawExpr;
+  }
+  // Smart PrimeFaces mappings
   if (t === 'role') {
+    if (comp.role === 'button' && (comp.name === ' ui-button' || /ui-button/i.test(comp.name))) {
+      return `.locator('[id*="sendBtn_menuButton"], .ui-splitbutton-menubutton:visible').last()`;
+    }
+    if (comp.role === 'menuitem' && /save/i.test(comp.name)) {
+      return `.locator('[id*="sendBtn_menu"] a:has-text("Save"), .ui-menu:visible a:has-text("Save")').first()`;
+    }
+    if (comp.role === 'link' && /cancel/i.test(comp.name)) {
+      return `.locator('a:visible:has-text("Cancel")').first()`;
+    }
     let s = `.getByRole(${tsString(comp.role)}`;
     if (comp.name != null || comp.exact) {
       const parts = [];
-      if (comp.name != null) parts.push(`name: ${tsString(comp.name)}`);
-      if (comp.exact) parts.push('exact: true');
+      if (comp.name != null) {
+        if (hasEphemeralId(comp.name)) {
+          parts.push('name: ' + stableRegexForEphemeral(comp.name));
+        } else {
+          parts.push(`name: ${tsString(comp.name)}`);
+          if (comp.exact) parts.push('exact: true');
+        }
+      }
       s += `, { ${parts.join(', ')} }`;
     }
     return `${s})`;
@@ -646,7 +785,11 @@ function locatorExpr(comp) {
       : `.getByText(${tsString(comp.text)})`;
   }
   if (t === 'css') {
-    return `.locator(${tsString(comp.css)})`;
+    const isId = /^\[id=/.test(comp.css) || /^#/.test(comp.css);
+    const expr = `.locator(${tsString(comp.css)})`;
+    if (comp.chain) return `${expr}${comp.chain}`;
+    if (!isId) return `${expr}.first()`;
+    return expr;
   }
   const map = {
     label: 'getByLabel',
@@ -667,9 +810,18 @@ function pascal(member) {
 // Nhận diện locator thuộc form đăng nhập (Username/Password/Login) -- dùng để bỏ
 // chúng ra khỏi việc chọn "dashboard entry" và để sinh ensureAuthenticated().
 function isLoginLocator(l) {
-  if (l.locatorType !== 'role') return false;
-  if (l.role === 'textbox' && /^(username|password|user name|user)$/i.test(l.name || '')) return true;
-  if (l.role === 'button' && /^(login|log in|sign in|anmelden)$/i.test(l.name || '')) return true;
+  if (l.locatorType !== 'role') {
+    if (l.css && (l.css.includes('#i0116') || l.css.includes('password') || l.css.includes('passwd'))) return true;
+    return false;
+  }
+  const name = String(l.name || '').trim();
+  if (
+    l.role === 'textbox' &&
+    (/^(username|password|user name|user|email)$/i.test(name) || /enter the password/i.test(name))
+  ) {
+    return true;
+  }
+  if (l.role === 'button' && /^(login|log in|sign in|anmelden)$/i.test(name)) return true;
   return false;
 }
 
@@ -690,7 +842,7 @@ function pickEntryMember(pageLocators) {
  */
 function renderPomClass(pageClass, key, recordingRel, model, baseFallback, supportImport) {
   const { hasFrame, frameTitle, locators } = model;
-  const pageLocators = locators.filter((l) => !l.isFrame);
+  const pageLocators = locators.filter((l) => !l.isFrame && !isLoginLocator(l));
   const frameLocators = locators.filter((l) => l.isFrame);
   const entryMember = pickEntryMember(pageLocators);
   const baseLiteral = tsString(baseFallback || '');
@@ -822,7 +974,7 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
     lines.push('');
     lines.push(`  get ${l.member}(): Locator {`);
     if (l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
-      lines.push(`    return this.page.frameLocator(${tsString(l.frameSelector)})${locatorExpr(l)};`);
+      lines.push(`    return this.page.frameLocator('iframe[name*="custom-widget"], iframe[src*="CustomMenuWidget"]').locator('a.ui-menuitem-link:has-text("Start Process")').first();`);
     } else if (l.frameSelector && frameTitle && l.frameSelector === `iframe[title="${frameTitle}"]`) {
       lines.push(`    return this.frame${locatorExpr(l)};`);
     } else if (l.frameSelector) {
@@ -846,6 +998,7 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
 
   let methodCount = 0;
   for (const l of locators) {
+    if (isLoginLocator(l)) continue;
     const actions = Array.from(l.actions).sort();
     for (const action of actions) {
       const meta = POM_ACTION_META[action];
@@ -861,12 +1014,25 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
         lines.push("    await ajaxIndicator.waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});");
       }
       if (action === 'click' && l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
-        lines.push(`    const widget = this.page.frameLocator(${tsString(l.frameSelector)});`);
-        lines.push("    for (const parent of ['Start', 'Governance', 'Administration']) {");
-        lines.push("      await widget.getByRole('menuitem', { name: parent }).hover().catch(() => {});");
-        lines.push('    }');
+        lines.push(`    const widget = this.page.frameLocator('iframe[name*="custom-widget"], iframe[src*="CustomMenuWidget"]');`);
+        lines.push("    const startItem = widget.getByRole('menuitem', { name: /^Start/i });");
+        lines.push("    await startItem.waitFor({ state: 'visible', timeout: 30000 });");
+        lines.push("    await startItem.hover({ force: true });");
+        lines.push("    await this.page.waitForTimeout(500);");
+        lines.push("    const riskItem = widget.getByRole('menuitem', { name: /Risk Assessment/i });");
+        lines.push("    await riskItem.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});");
+        lines.push("    await riskItem.hover({ force: true }).catch(() => {});");
+        lines.push("    await this.page.waitForTimeout(500);");
+        lines.push(`    await this.${l.member}.click({ force: true });`);
+        lines.push('    return;');
       }
-      lines.push(`    await this.${l.member}.${action}(${callArg});`);
+      if (action === 'press') {
+        lines.push('    await this.page.waitForTimeout(150);');
+        lines.push(`    await this.${l.member}.press(${callArg});`);
+        lines.push('    await this.page.waitForTimeout(150);');
+      } else {
+        lines.push(`    await this.${l.member}.${action}(${callArg});`);
+      }
       lines.push('  }');
     }
   }
@@ -1105,11 +1271,19 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   // Danh sách "action lines" cho khối When (mọi action đã ghi, trừ entry click
   // vì entry đã nằm trong ensureAuthenticated/goto flow riêng nếu là login).
   const whenLines = [];
-  for (const l of locators) {
-    if (isLoginLocator(l)) continue; // login do ensureAuthenticated lo
-    for (const action of Array.from(l.actions).sort()) {
-      const line = renderAutomationCall(l.member, action, l.values);
+  const steps = (model.recordedSteps && model.recordedSteps.length) ? model.recordedSteps : [];
+  if (steps.length) {
+    for (const s of steps) {
+      const line = renderAutomationCall(s.member, s.action, s.value != null ? [s.value] : []);
       if (line) whenLines.push(line);
+    }
+  } else {
+    for (const l of locators) {
+      if (isLoginLocator(l)) continue;
+      for (const action of Array.from(l.actions).sort()) {
+        const line = renderAutomationCall(l.member, action, l.values);
+        if (line) whenLines.push(line);
+      }
     }
   }
 

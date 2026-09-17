@@ -532,7 +532,7 @@ function consumeGetByTail(portion, startIdx, comp) {
  * Phân tích MỘT locator "sạch" (đúng 1 lời gọi engine, không .filter()/.nth()/...)
  * ở đầu chuỗi `portion`. Trả về { comp, endIdx } hoặc null nếu không sạch/không phù hợp.
  */
-function parseCleanLocator(portion) {
+function parseCleanLocator(portion, fullSource = '') {
   const m = portion.match(
     /^(getByRole|getByLabel|getByPlaceholder|getByText|getByTestId|getByTitle|getByAltText|locator)\(/
   );
@@ -562,6 +562,33 @@ function parseCleanLocator(portion) {
     const isPrimeFacesInteractive = /\.ui-(?:radiobutton|chkbox)(?:-box|-icon)?\b/.test(css);
 
     if (!isId && !isPrimeFacesInteractive) return null;
+
+    // ✅ Ưu tiên sinh getByRole cho radio/checkbox nếu tìm được label context
+    if (isPrimeFacesInteractive && fullSource) {
+      // Quét ngược trong recording để tìm context label/text gần nhất
+      const portionStart = fullSource.indexOf(portion);
+      if (portionStart !== -1) {
+        const lookbackStart = Math.max(0, portionStart - 300);
+        const contextSnippet = fullSource.slice(lookbackStart, portionStart);
+
+        // Pattern: getByRole('radio', { name: 'Application' }) hoặc getByText('Application')
+        const labelMatch = contextSnippet.match(/(?:name|text):\s*['"]([^'"]+)['"]/i);
+
+        if (labelMatch) {
+          const label = labelMatch[1].trim();
+          // Chuyển sang getByRole thay vì CSS selector
+          comp.locatorType = 'role';
+          comp.role = css.includes('radiobutton') ? 'radio' : 'checkbox';
+          comp.name = label;
+          comp._preferRole = true; // Đánh dấu để generateLocator biết ưu tiên role-based
+
+          let i = strArg.endIdx;
+          while (i < portion.length && /\s/.test(portion[i])) i++;
+          if (portion[i] !== ')') return null;
+          return { comp, endIdx: i + 1 };
+        }
+      }
+    }
 
     let i = strArg.endIdx;
     while (i < portion.length && /\s/.test(portion[i])) i++;
@@ -667,7 +694,7 @@ function extractPomModel(source) {
     locatorPart = locatorPart.replace(/\.ui-state-(?:hover|focus|active)\b/g, '');
 
     let comp = null;
-    const parsed = parseCleanLocator(locatorPart);
+    const parsed = parseCleanLocator(locatorPart, source);
     if (parsed && parsed.endIdx >= locatorPart.length) {
       comp = { ...parsed.comp, chain: '', frameSelector, isFrame };
     } else {
@@ -783,6 +810,15 @@ function locatorExpr(comp) {
       if (re) return re;
     }
     return '.' + comp.rawExpr;
+  }
+  // ✅ Priority 0: Ưu tiên getByRole cho radio/checkbox nếu có label context
+  if (comp._preferRole && comp.role && comp.name) {
+    let s = `.getByRole(${tsString(comp.role)}`;
+    const parts = [];
+    parts.push(`name: ${tsString(comp.name)}`);
+    if (comp.exact) parts.push('exact: true');
+    s += `, { ${parts.join(', ')} }`;
+    return `${s})`;
   }
   // Smart PrimeFaces mappings
   if (t === 'role') {

@@ -644,11 +644,22 @@ function extractPomModel(source) {
     let locatorPart = beforeAction.replace(/^await\s+page\./, '');
 
     if (isFrame) {
-      const idx = beforeAction.lastIndexOf('.contentFrame()');
-      const framePart = beforeAction.slice(0, idx);
+      // Priority 4: Support multi-level .contentFrame() chains (Task frame -> Modal sub-frame).
+      // Outermost frame = before FIRST contentFrame(), locator = after LAST contentFrame().
+      const allFrameIdxs = [];
+      let _searchPos = 0;
+      while (true) {
+        const _found = beforeAction.indexOf('.contentFrame()', _searchPos);
+        if (_found === -1) break;
+        allFrameIdxs.push(_found);
+        _searchPos = _found + 1;
+      }
+      const _firstIdx = allFrameIdxs[0];
+      const _lastIdx = allFrameIdxs[allFrameIdxs.length - 1];
+      const framePart = beforeAction.slice(0, _firstIdx);
       const selMatch = framePart.match(/\.locator\('([^']+)'\)/) || framePart.match(/\.locator\("([^"]+)"\)/);
       frameSelector = selMatch ? selMatch[1] : (frameTitle ? `iframe[title="${frameTitle}"]` : null);
-      locatorPart = beforeAction.slice(idx + '.contentFrame().'.length);
+      locatorPart = beforeAction.slice(_lastIdx + '.contentFrame().'.length);
     }
     locatorPart = locatorPart.replace(/;\s*$/, '').trim();
 
@@ -748,9 +759,29 @@ function stableRegexForEphemeral(name) {
   const esc = name.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m).replace(/\d+/g, '\\d+');
   return '/' + esc + '/i';
 }
+/**
+ * Priority 1: Star Rating recognizer.
+ * Converts fragile div:nth-child(N) > a selector into stable .ui-rating-star locator.
+ */
+function isRatingSelector(raw) {
+  return /div:nth-child\(\d+\)\s*>\s*a/i.test(raw || '');
+}
+
+function ratingLocatorExpr(raw) {
+  const m = (raw || '').match(/div:nth-child\((\d+)\)\s*>\s*a/i);
+  if (!m) return null;
+  const n = m[1];
+  return ".locator('.ui-rating div:nth-child(" + n + ") > a, div:nth-child(" + n + ") > a').first()";
+}
+
 function locatorExpr(comp) {
   const t = comp.locatorType;
   if (t === 'raw') {
+    // Priority 1: Star Rating — convert nth-child rating selector to semantic form
+    if (comp.rawExpr && isRatingSelector(comp.rawExpr)) {
+      const re = ratingLocatorExpr(comp.rawExpr);
+      if (re) return re;
+    }
     return '.' + comp.rawExpr;
   }
   // Smart PrimeFaces mappings
@@ -786,6 +817,11 @@ function locatorExpr(comp) {
   }
   if (t === 'css') {
     const isId = /^\[id=/.test(comp.css) || /^#/.test(comp.css);
+    // Priority 1: Star Rating in css locator
+    if (isRatingSelector(comp.css)) {
+      const re = ratingLocatorExpr(comp.css);
+      if (re) return re;
+    }
     const expr = `.locator(${tsString(comp.css)})`;
     if (comp.chain) return `${expr}${comp.chain}`;
     if (!isId) return `${expr}.first()`;
@@ -983,6 +1019,14 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
       lines.push(`    return this.frame${locatorExpr(l)};`);
     }
     lines.push('  }');
+    if (l.member && /^anth\d+/i.test(l.member)) {
+      const starNum = l.member.replace(/^anth/i, '');
+      lines.push('');
+      lines.push(`  /** Semantic alias for ${l.member} */`);
+      lines.push(`  get ratingStar${starNum}(): Locator {`);
+      lines.push(`    return this.${l.member};`);
+      lines.push('  }');
+    }
   }
 
   // Helper: waitForAjax
@@ -995,6 +1039,72 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   lines.push("    const indicator = this.page.locator('.ajax-status-position, [id*=\"ajax-indicator-ajax-indicator\"]').first();");
   lines.push("    await indicator.waitFor({ state: 'hidden', timeout }).catch(() => {});");
   lines.push('  }');
+
+  // Priority 2: File Upload helper
+  if (hasFrame) {
+    lines.push('');
+    lines.push('  /**');
+    lines.push('   * Priority 2 - File Upload (p:fileUpload):');
+    lines.push('   * Playwright Codegen cannot capture native OS File Picker dialogs.');
+    lines.push('   * Use setInputFiles() on the hidden input[type="file"] instead.');
+    lines.push('   * @param fileInput  Locator for input[type="file"] inside the iframe.');
+    lines.push('   * @param filePath   Absolute path to the file to upload.');
+    lines.push('   */');
+    lines.push('  async uploadFile(fileInput: Locator, filePath: string): Promise<void> {');
+    lines.push('    await fileInput.setInputFiles(filePath);');
+    lines.push('    await this.waitForAjax();');
+    lines.push('  }');
+  }
+
+  // Priority 3: Dropdown helper
+  if (hasFrame) {
+    lines.push('');
+    lines.push('  /**');
+    lines.push('   * Priority 3 - Custom Dropdown / Autocomplete (p:selectOneMenu, p:autoComplete):');
+    lines.push('   * Replaces fragile ArrowDown×N + Enter recordings with text-based click.');
+    lines.push('   * The panel is appended to <body> outside the iframe, targeted from page level.');
+    lines.push('   * @param triggerLocator  Dropdown label locator inside the iframe.');
+    lines.push('   * @param optionText       Visible text of the option to select.');
+    lines.push('   */');
+    lines.push('  async selectDropdownOption(triggerLocator: Locator, optionText: string): Promise<void> {');
+    lines.push('    await triggerLocator.click();');
+    lines.push("    const panel = this.page.locator('.ui-selectonemenu-panel:visible, .ui-autocomplete-panel:visible').last();");
+    lines.push("    await panel.waitFor({ state: 'visible', timeout: 10000 });");
+    lines.push("    await panel.locator('.ui-selectonemenu-item, .ui-autocomplete-item').filter({ hasText: optionText }).first().click();");
+    lines.push('    await this.waitForAjax();');
+    lines.push('  }');
+  }
+
+  // Priority 5: DatePicker helper
+  if (hasFrame) {
+    lines.push('');
+    lines.push('  /**');
+    lines.push('   * Priority 5 - Date Picker (p:calendar / p:datePicker):');
+    lines.push('   * fill+Tab is safer than clicking the popup to avoid Strict Mode Violation');
+    lines.push('   * when the same day number appears in adjacent months.');
+    lines.push('   * @param inputLocator  Calendar text input locator inside the iframe.');
+    lines.push('   * @param dateStr        Date string in the format expected (e.g. "31/12/2025").');
+    lines.push('   */');
+    lines.push('  async fillDate(inputLocator: Locator, dateStr: string): Promise<void> {');
+    lines.push('    await inputLocator.fill(dateStr);');
+    lines.push("    await inputLocator.press('Tab');  // Trigger PrimeFaces AJAX date mask");
+    lines.push('    await this.waitForAjax();');
+    lines.push('  }');
+  }
+
+  // Priority 6: Virtual Scroll helper
+  if (hasFrame) {
+    lines.push('');
+    lines.push('  /**');
+    lines.push('   * Priority 6 - Virtual Scroll / Lazy DataTable:');
+    lines.push('   * Mouse-wheel scroll is NOT captured by Playwright Codegen.');
+    lines.push('   * Call before interacting with rows in a lazy/virtual-scroll table.');
+    lines.push('   * @param rowLocator  Target row or cell locator inside the DataTable.');
+    lines.push('   */');
+    lines.push('  async scrollTableRowIntoView(rowLocator: Locator): Promise<void> {');
+    lines.push('    await rowLocator.scrollIntoViewIfNeeded();');
+    lines.push('  }');
+  }
 
   let methodCount = 0;
   for (const l of locators) {
@@ -1026,6 +1136,10 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
         lines.push(`    await this.${l.member}.click({ force: true });`);
         lines.push('    return;');
       }
+      // Priority 6: scrollIntoView for gridcell (Virtual Scroll DataTable rows)
+      if (action === 'click' && (l.role === 'gridcell' || (l.rawExpr && l.rawExpr.includes("'gridcell'")) || /gridcell|cell/i.test(l.member))) {
+        lines.push(`    await this.${l.member}.scrollIntoViewIfNeeded().catch(() => {});`);
+      }
       if (action === 'press') {
         lines.push('    await this.page.waitForTimeout(150);');
         lines.push(`    await this.${l.member}.press(${callArg});`);
@@ -1033,6 +1147,26 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
       } else {
         lines.push(`    await this.${l.member}.${action}(${callArg});`);
       }
+      lines.push('  }');
+      if (action === 'click' && l.member && /^anth\d+/i.test(l.member)) {
+        const starNum = l.member.replace(/^anth/i, '');
+        lines.push('');
+        lines.push(`  /** Semantic alias for ${methodName} */`);
+        lines.push(`  async clickRatingStar${starNum}(): Promise<void> {`);
+        lines.push(`    await this.${methodName}();`);
+        lines.push('  }');
+      }
+    }
+    if (l.member && l.member.endsWith('LabelElement')) {
+      const clean = l.member.replace(/LabelElement$/, '');
+      const optMethod = 'select' + clean.charAt(0).toUpperCase() + clean.slice(1) + 'Option';
+      lines.push('');
+      lines.push('  /**');
+      lines.push(`   * Priority 3 Semantic Helper: Select option by visible text for ${l.member}.`);
+      lines.push('   * Replaces fragile ArrowDown + Enter sequence with direct option click.');
+      lines.push('   */');
+      lines.push(`  async ${optMethod}(optionText: string): Promise<void> {`);
+      lines.push(`    await this.selectDropdownOption(this.${l.member}, optionText);`);
       lines.push('  }');
     }
   }

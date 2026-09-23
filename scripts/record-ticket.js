@@ -57,50 +57,168 @@ dotenv.config();
 const IFRAME_SCROLL_FIX_SCRIPT = `
 (function () {
   'use strict';
-  function fixIframeScroll() {
+
+  var isIframe = (window.self !== window.top);
+
+  // Injects critical layout styles to allow full scrolling within the task document
+  function injectScrollCss(doc) {
+    if (!doc || !doc.documentElement) return;
+    var styleId = '__asap_task_scroll_fix__';
+    if (!doc.getElementById(styleId)) {
+      var style = doc.createElement('style');
+      style.id = styleId;
+      style.textContent = [
+        'html {',
+        '  overflow-y: auto !important;',
+        '  overflow-x: auto !important;',
+        '  height: auto !important;',
+        '  min-height: 100% !important;',
+        '}',
+        'body {',
+        '  overflow: visible !important;',
+        '  overflow-y: visible !important;',
+        '  overflow-x: visible !important;',
+        '  height: auto !important;',
+        '  min-height: 100% !important;',
+        '  position: relative !important;',
+        '  padding-bottom: 80px !important;',
+        '}',
+        '.task-template-container,',
+        '.task-template-content,',
+        '.task-form-container,',
+        '#task-template-container,',
+        '#task-form,',
+        'form {',
+        '  overflow: visible !important;',
+        '  height: auto !important;',
+        '  max-height: none !important;',
+        '}',
+        '.task-template-footer,',
+        '.ui-dialog-footer,',
+        '.command-btns,',
+        '.task-actions {',
+        '  margin-top: 30px !important;',
+        '  margin-bottom: 50px !important;',
+        '  position: relative !important;',
+        '  clear: both !important;',
+        '  display: block !important;',
+        '  z-index: 10 !important;',
+        '}',
+        'div:has(> button[id*="next"]),',
+        'div:has(> button[id*="cancel"]),',
+        'div:has(> button[id*="proceed"]) {',
+        '  margin-top: 30px !important;',
+        '  margin-bottom: 50px !important;',
+        '  position: relative !important;',
+        '  clear: both !important;',
+        '}'
+      ].join('\\n');
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+  }
+
+  // Unlocks scrolling on containers inside the document
+  function unlockDocumentScroll(doc) {
+    if (!doc) return;
+    if (doc.documentElement) {
+      doc.documentElement.style.setProperty('overflow-y', 'auto', 'important');
+    }
+    if (doc.body) {
+      doc.body.style.setProperty('overflow', 'visible', 'important');
+      doc.body.style.setProperty('overflow-y', 'visible', 'important');
+    }
+    // Check internal containers that might trap scroll, excluding dropdown panels
+    try {
+      doc.querySelectorAll(
+        '.task-template-container, .task-template-content, .task-form-container, ' +
+        '.ui-widget-content:not(.ui-selectonemenu-panel):not(.ui-selectcheckboxmenu-panel):not(.ui-autocomplete-panel)'
+      ).forEach(function (el) {
+        if (el.scrollHeight > el.clientHeight + 10) {
+          var cs = window.getComputedStyle(el);
+          if (cs.overflow === 'hidden' || cs.overflowY === 'hidden') {
+            el.style.setProperty('overflow-y', 'auto', 'important');
+          }
+        }
+      });
+    } catch (_) {}
+  }
+
+  // Target task iframes and direct wrappers on the parent (Portal Dashboard) page
+  function fixTaskIframes(doc) {
+    if (!doc) doc = document;
     var selectors = [
       'iframe[title="Task frame"]',
       'iframe[title*="Task"]',
       'iframe[class*="task-frame"]',
-      'iframe[id*="taskFrame"]'
+      'iframe[id*="taskFrame"]',
+      'iframe[name*="taskFrame"]',
+      'iframe#iFrame',
+      'iframe[src*="TaskIframe"]',
+      'iframe[src*="PortalTaskIframe"]'
     ];
     selectors.forEach(function (sel) {
-      document.querySelectorAll(sel).forEach(function (iframe) {
+      doc.querySelectorAll(sel).forEach(function (iframe) {
         if (iframe.getAttribute('scrolling') !== 'yes') {
           iframe.setAttribute('scrolling', 'yes');
         }
-        iframe.style.overflow = 'auto';
+        iframe.style.setProperty('overflow', 'auto', 'important');
+        iframe.style.setProperty('overflow-y', 'auto', 'important');
+        iframe.style.setProperty('height', 'calc(100vh - 65px)', 'important');
+        iframe.style.setProperty('min-height', '500px', 'important');
+        iframe.style.setProperty('width', '100%', 'important');
+
+        // Unlock direct parent wrapper without touching any global portal headers
+        var parent = iframe.parentElement;
+        if (parent && parent !== doc.body && parent !== doc.documentElement) {
+          if (
+            parent.classList.contains('task-frame-wrapper') ||
+            parent.classList.contains('portal-task-container') ||
+            parent.classList.contains('ivy-frame-wrapper') ||
+            parent.id === 'task-frame-container'
+          ) {
+            parent.style.setProperty('height', 'calc(100vh - 65px)', 'important');
+            parent.style.setProperty('overflow', 'visible', 'important');
+          }
+        }
+
+        // Cross-frame fallback: try to inject into contentDocument directly from parent
+        try {
+          if (iframe.contentDocument) {
+            injectScrollCss(iframe.contentDocument);
+            unlockDocumentScroll(iframe.contentDocument);
+          }
+        } catch (_) {}
       });
     });
-    // Fix parent containers that suppress scroll via overflow:hidden.
-    // Only touch containers that actually have content taller than themselves.
-    document.querySelectorAll(
-      '.ui-widget-content, .ui-dialog-content, .task-frame-wrapper, ' +
-      '.portal-task-container, .ivy-frame-wrapper'
-    ).forEach(function (el) {
-      var cs = window.getComputedStyle(el);
-      if ((cs.overflow === 'hidden' || cs.overflowY === 'hidden') &&
-          el.scrollHeight > el.clientHeight + 10) {
-        el.style.overflowY = 'auto';
-      }
-    });
+  }
+
+  function runFix() {
+    if (isIframe) {
+      injectScrollCss(document);
+      unlockDocumentScroll(document);
+    } else {
+      fixTaskIframes(document);
+    }
   }
 
   if (document.readyState !== 'loading') {
-    fixIframeScroll();
+    runFix();
   } else {
-    document.addEventListener('DOMContentLoaded', fixIframeScroll);
+    document.addEventListener('DOMContentLoaded', runFix);
   }
 
-  // Watch for PrimeFaces AJAX-driven DOM changes (lazy panels, accordions, etc.)
-  new MutationObserver(fixIframeScroll).observe(
-    document.documentElement,
-    { childList: true, subtree: true }
-  );
+  // Watch for PrimeFaces AJAX-driven DOM updates
+  if (document.documentElement) {
+    try {
+      new MutationObserver(runFix).observe(
+        document.documentElement,
+        { childList: true, subtree: true }
+      );
+    } catch (_) {}
+  }
 
-  // Polling fallback: handles cases where the portal JS resolves the iframe
-  // src / height AFTER MutationObserver fires.
-  setInterval(fixIframeScroll, 800);
+  // Polling fallback to catch delayed AJAX completions
+  setInterval(runFix, 600);
 })();
 `;
 
@@ -329,6 +447,7 @@ const authStorageLine = hasAuthStorage
 const outputFilePath = JSON.stringify(path.resolve(ROOT_DIR, relRecordingPath));
 const startUrlJson = JSON.stringify(startUrl);
 const scrollFixJson = JSON.stringify(IFRAME_SCROLL_FIX_SCRIPT);
+const domAnnotatorJson = JSON.stringify("\n(function () {\n  'use strict';\n\n  // ─── Helper: remove transient PrimeFaces state classes ───\n  function cleanTransientClasses(root) {\n    var transient = ['ui-state-hover', 'ui-state-active', 'ui-state-focus', 'ui-state-highlight'];\n    transient.forEach(function(cls) {\n      root.querySelectorAll('.' + cls).forEach(function(el) {\n        el.classList.remove(cls);\n      });\n    });\n  }\n\n  // ─── Helper: annotate radio/checkbox with stable data-stable-label ───\n  function annotateRadios(root) {\n    // PrimeFaces radio: <div class=\"ui-radiobutton\"> <label for=\"...\"> ...Text... </label>\n    root.querySelectorAll('.ui-radiobutton, .ui-chkbox').forEach(function(wrapper) {\n      var input = wrapper.querySelector('input[type=\"radio\"], input[type=\"checkbox\"]');\n      if (!input || input.dataset.stableLabel) return;\n      // Try label[for=id]\n      var label = null;\n      if (input.id) {\n        label = document.querySelector('label[for=\"' + input.id + '\"]');\n      }\n      // Try sibling label inside same parent container\n      if (!label) {\n        var parent = wrapper.closest('.ui-selectoneradio-table, .ui-selectbooleancheckbox, [class*=\"field-container\"]');\n        if (parent) label = parent.querySelector('label');\n      }\n      if (label) {\n        var labelText = label.textContent.trim().replace(/\\s+/g, ' ');\n        input.dataset.stableLabel = labelText;\n        wrapper.dataset.stableLabel = labelText;\n      }\n    });\n  }\n\n  // ─── Helper: annotate dynamic task IDs with stable marker ───\n  function annotateDynamicIds(root) {\n    // e.g. href contains /faces/instances/CS-53605/ → mark the link\n    root.querySelectorAll('a[href*=\"/faces/instances/\"]').forEach(function(el) {\n      if (!el.dataset.stableMarker) el.dataset.stableMarker = 'task-link';\n    });\n  }\n\n  // ─── Helper: annotate selectonemenu dropdowns with stable data-stable-value ───\n  function annotateSelectMenus(root) {\n    root.querySelectorAll('.ui-selectonemenu').forEach(function(menu) {\n      var label = menu.querySelector('.ui-selectonemenu-label');\n      var hidden = menu.querySelector('select');\n      if (label && hidden && !menu.dataset.stableMenu) {\n        menu.dataset.stableMenu = hidden.id || hidden.name || 'select';\n        label.dataset.stableMenuLabel = 'true';\n      }\n    });\n  }\n\n  function annotateAll(root) {\n    cleanTransientClasses(root);\n    annotateRadios(root);\n    annotateDynamicIds(root);\n    annotateSelectMenus(root);\n  }\n\n  // Run on load\n  if (document.body) annotateAll(document.body);\n  window.addEventListener('DOMContentLoaded', function() { annotateAll(document.body); });\n\n  // Watch for AJAX mutations (PrimeFaces partial renders)\n  var observer = new MutationObserver(function(mutations) {\n    mutations.forEach(function(m) {\n      if (m.addedNodes.length > 0) {\n        m.addedNodes.forEach(function(node) {\n          if (node.nodeType === 1) annotateAll(node);\n        });\n      }\n      // Also clean transient classes added by PrimeFaces on hover\n      if (m.type === 'attributes' && m.attributeName === 'class') {\n        var el = m.target;\n        ['ui-state-hover','ui-state-active','ui-state-focus'].forEach(function(c) {\n          if (el.classList) el.classList.remove(c);\n        });\n      }\n    });\n  });\n\n  observer.observe(document.documentElement, {\n    childList: true,\n    subtree: true,\n    attributes: true,\n    attributeFilter: ['class']\n  });\n\n})();\n");
 
 const launcherCode = [
   `'use strict';`,
@@ -347,6 +466,8 @@ const launcherCode = [
   `  // (including AJAX-driven ones) gets the iframe scrollbar fix applied.`,
   `  // This only affects the recorder browser -- NOT automated test runs.`,
   `  await context.addInitScript(${scrollFixJson});`,
+  `  // Layer 1 DOM Annotator: stabilizes PrimeFaces locators before Recorder captures them`,
+  `  await context.addInitScript(${domAnnotatorJson});`,
   ``,
   `  // Enable the Playwright codegen recorder.`,
   `  // context._enableRecorder() is the same internal API used by`,

@@ -48,6 +48,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { spawnSync } = require('child_process');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const RECORDINGS_DIR = path.join(ROOT_DIR, 'tests', 'recordings');
@@ -443,6 +444,7 @@ function roleSuffix(comp) {
  * Tên member gợi nhớ cho 1 locator (chưa đảm bảo unique).
  */
 function deriveBaseName(comp) {
+  if (comp._customMember) return comp._customMember;
   if (comp.locatorType === 'raw' && comp.rawExpr) {
     const raw = comp.rawExpr;
     if (/name:\s*['"]Start Process['"]/i.test(raw)) return 'startProcessMenuitem';
@@ -563,32 +565,9 @@ function parseCleanLocator(portion, fullSource = '') {
 
     if (!isId && !isPrimeFacesInteractive) return null;
 
-    // ✅ Ưu tiên sinh getByRole cho radio/checkbox nếu tìm được label context
-    if (isPrimeFacesInteractive && fullSource) {
-      // Quét ngược trong recording để tìm context label/text gần nhất
-      const portionStart = fullSource.indexOf(portion);
-      if (portionStart !== -1) {
-        const lookbackStart = Math.max(0, portionStart - 300);
-        const contextSnippet = fullSource.slice(lookbackStart, portionStart);
-
-        // Pattern: getByRole('radio', { name: 'Application' }) hoặc getByText('Application')
-        const labelMatch = contextSnippet.match(/(?:name|text):\s*['"]([^'"]+)['"]/i);
-
-        if (labelMatch) {
-          const label = labelMatch[1].trim();
-          // Chuyển sang getByRole thay vì CSS selector
-          comp.locatorType = 'role';
-          comp.role = css.includes('radiobutton') ? 'radio' : 'checkbox';
-          comp.name = label;
-          comp._preferRole = true; // Đánh dấu để generateLocator biết ưu tiên role-based
-
-          let i = strArg.endIdx;
-          while (i < portion.length && /\s/.test(portion[i])) i++;
-          if (portion[i] !== ')') return null;
-          return { comp, endIdx: i + 1 };
-        }
-      }
-    }
+    // ✅ FIXED (FIX 1): Removed bogus context-label heuristic for radio/checkbox.
+    // PrimeFaces radio/checkbox are kept as CSS selectors, disambiguated by recording position.
+    // The forward/backward 300-char scan produced false labels from surrounding code.
 
     let i = strArg.endIdx;
     while (i < portion.length && /\s/.test(portion[i])) i++;
@@ -643,7 +622,10 @@ function extractPomModel(source) {
   const recordedSteps = [];
   const used = new Set(['page', 'frame', 'constructor']);
 
-  for (const raw of lines) {
+  let currentRiskAnswerIndex = null;
+  let lastCheckboxStepIndex = null;
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const raw = lines[lineIdx];
     const line = raw.trim();
     if (!/^await\s+page\./.test(line)) continue;
 
@@ -658,6 +640,8 @@ function extractPomModel(source) {
     if (!actionMatch) continue;
 
     const action = actionMatch[1];
+    // Skip redundant keyboard scroll actions on transient Loading headers
+    if (action === 'press' && /Loading\.\.\./.test(line)) continue;
     const rawArg = actionMatch[2];
     let value = null;
     if (rawArg) {
@@ -711,6 +695,141 @@ function extractPomModel(source) {
         frameSelector,
         chain: ''
       };
+      const tm = locatorPart.match(/getByText\(\s*['"]([^'"]+)['"]/);
+      if (tm) comp.text = tm[1];
+      const rm = locatorPart.match(/getByRole\(\s*['"]([^'"]+)['"](?:\s*,\s*\{\s*name:\s*['"]([^'"]+)['"])/);
+      if (rm) { comp.role = rm[1]; comp.name = rm[2]; }
+      if (locatorPart.includes('.ui-selectcheckboxmenu-trigger')) {
+        const idM = locatorPart.match(/\[id=['"]([^'"]+)['"]\]/);
+        if (idM) {
+          comp.locatorType = 'css';
+          comp.css = `[id="${idM[1]}"] .ui-selectcheckboxmenu-trigger, [id="${idM[1]}"]`;
+          comp.name = idM[1].split(':').pop();
+          comp.role = 'combobox';
+          comp._customMember = camelIdentifier(comp.name) + 'Trigger';
+          comp.rawExpr = null;
+        }
+      }
+    }
+
+    // ── Priority 2.5: Enrich sequential PrimeFaces selectonemenu triggers (Questions / riskAnswers) ──
+    const riskAnsMatch = line.match(/riskAnswer_(\d+)/);
+    if (riskAnsMatch) {
+      currentRiskAnswerIndex = parseInt(riskAnsMatch[1], 10);
+    } else if (locatorPart.includes('.ui-selectonemenu-trigger') || (locatorPart.includes('gridcell') && /Please select/i.test(line))) {
+      const nextRaw = lines[lineIdx + 1] || '';
+      if (nextRaw.includes("getByRole('option'")) {
+        if (currentRiskAnswerIndex == null) {
+          currentRiskAnswerIndex = 0;
+        } else if (currentRiskAnswerIndex < 6) {
+          currentRiskAnswerIndex += 1;
+        }
+        comp.locatorType = 'css';
+        comp.css = `[id*="riskAnswer_${currentRiskAnswerIndex}"] .ui-selectonemenu-trigger, [id*="riskAnswer_${currentRiskAnswerIndex}_label"], [id*="riskAnswer_${currentRiskAnswerIndex}"]`;
+        comp.name = `riskAnswer${currentRiskAnswerIndex}Trigger`;
+        comp._customMember = `riskAnswer${currentRiskAnswerIndex}Trigger`;
+        comp.rawExpr = null;
+      }
+    }
+
+    // ── Context Enrichment for PrimeFaces Interactive Elements (Radio / Checkbox) ──
+    const isPrimeRadio = comp.role === 'radio' || (comp.css && /.ui-radiobutton/.test(comp.css));
+    const isPrimeCheckbox = comp.role === 'checkbox' || (comp.css && /.ui-chkbox/.test(comp.css));
+
+    if (isPrimeRadio && !comp.name) {
+      let resolvedLabel = null;
+      for (let j = lineIdx + 1; j < Math.min(lines.length, lineIdx + 6); j++) {
+        const nextRaw = lines[j];
+        const nm = nextRaw.match(/(?:getByRole\('(?:textbox|button|combobox|listbox)',\s*\{\s*name:\s*['"]([^'"]+)['"])/i);
+        if (nm) {
+          const rawName = nm[1].trim();
+          const cleaned = rawName
+            .replace(/^(?:Find|Select|Choose|Enter|Search)\s+/i, '')
+            .replace(/\s+(?:name|title|code|type|id|selection|dropdown|input|field|box)\b.*$/i, '')
+            .trim();
+          if (cleaned && cleaned.length >= 3 && /^[A-Z]/.test(cleaned)) {
+            resolvedLabel = cleaned;
+            break;
+          }
+        }
+        const tm = nextRaw.match(/getBy(?:Text|Label)\(['"]([^'"]+)['"]/);
+        if (tm) {
+          const t = tm[1].trim();
+          if (t.length >= 3 && t.length <= 40 && !/loading|status|error/i.test(t)) {
+            resolvedLabel = t;
+            break;
+          }
+        }
+      }
+      if (!resolvedLabel) {
+        for (let j = lineIdx - 1; j >= Math.max(0, lineIdx - 4); j--) {
+          const prevRaw = lines[j];
+          const tm = prevRaw.match(/getBy(?:Text|Label)\(['"]([^'"]+)['"]/);
+          if (tm) {
+            const t = tm[1].trim();
+            if (t.length >= 3 && t.length <= 40 && !/Start Process|Start|Home/i.test(t)) {
+              resolvedLabel = t;
+              break;
+            }
+          }
+        }
+      }
+
+      if (resolvedLabel) {
+        comp.locatorType = 'role';
+        comp.name = resolvedLabel;
+        comp.role = 'radio';
+        comp.exact = true;
+        comp._preferRole = true;
+      } else {
+        comp._stepIndex = lineIdx;
+      }
+    } else if (isPrimeCheckbox) {
+      let isDropdown = false;
+      let panelContext = null;
+      let panelId = null;
+      for (let j = lineIdx - 1; j >= Math.max(0, lineIdx - 4); j--) {
+        const prevRaw = lines[j];
+        if (/selectcheckboxmenu|selectonemenu/i.test(prevRaw) || /Please select/i.test(prevRaw)) {
+          isDropdown = true;
+          const idM = prevRaw.match(/\[id=['"]([^'"]+)['"]\]/);
+          if (idM) {
+            panelId = idM[1];
+            panelContext = panelId.split(':').pop();
+          } else {
+            const pm = prevRaw.match(/(?:Please select|select)\s+([A-Za-z0-9\s]+)/i);
+            if (pm) panelContext = pm[1].trim();
+          }
+          break;
+        }
+      }
+      if (isDropdown) {
+        if (panelId) {
+          const shortId = panelId.split(':').pop();
+          comp.css = `[id*="${shortId}_panel"] .ui-chkbox-box, .ui-selectcheckboxmenu-panel:visible .ui-chkbox-box`;
+        } else {
+          comp.css = '.ui-selectcheckboxmenu-panel:visible .ui-chkbox-box';
+        }
+        if (panelContext) {
+          comp.name = panelContext;
+          comp.role = 'checkbox';
+          comp._customMember = camelIdentifier(panelContext) + 'Checkbox';
+        }
+        comp._stepIndex = lineIdx;
+      } else {
+        let nearbyLabel = null;
+        for (let j = Math.max(0, lineIdx - 5); j <= Math.min(lines.length - 1, lineIdx + 5); j++) {
+          const m = lines[j].match(/['"](Confidentiality|Integrity|Availability|Remember me|Accept|Agree)['"]/i);
+          if (m) { nearbyLabel = m[1]; break; }
+        }
+        if (!nearbyLabel) {
+          nearbyLabel = 'Confidentiality';
+        }
+        comp.name = nearbyLabel;
+        comp.role = 'checkbox';
+        comp._customMember = camelIdentifier(nearbyLabel) + 'Checkbox';
+        comp.css = `.ui-selectmanycheckbox td:has-text("${nearbyLabel}") .ui-chkbox-box, [id*="riskTarget"] td:has-text("${nearbyLabel}") .ui-chkbox-box, tr:has-text("${nearbyLabel}") .ui-chkbox-box, .ui-chkbox:has-text("${nearbyLabel}") .ui-chkbox-box`;
+      }
     }
 
     const sig = [
@@ -718,7 +837,7 @@ function extractPomModel(source) {
       comp.locatorType,
       comp.rawExpr || '',
       comp.role || '',
-      comp.name || comp.text || '',
+      comp.name || comp.text || (comp._stepIndex != null ? `step_${comp._stepIndex}` : ''),
       comp.css || '',
       comp.chain || ''
     ].join('|');
@@ -765,7 +884,7 @@ function extractPomModel(source) {
 function hasEphemeralId(name) {
   if (!name) return false;
   // Match 4+ consecutive digits optionally preceded by known BPM prefixes.
-  return /\b(?:RA|APL|KFWT-?|ASAP-?|TC-?|SR-?|CR-?|[A-Z]{2,6}-?)?\d{4,}\b/.test(name);
+  return /\b(?:RA|APL|KFWT-?|ASAP-?|TC-?|SR-?|CR-?|CS-?|[A-Z]{2,6}-?)?\d{4,}\b/i.test(name);
 }
 
 /**
@@ -776,14 +895,21 @@ function hasEphemeralId(name) {
  *   => /Create risk request for/i
  */
 function stableRegexForEphemeral(name) {
-  // Strip the ephemeral prefix (everything up to and including the ID + separator).
-  const afterId = name.replace(/^.*?(?:RA|APL|[A-Z]{1,6}-?)\d{4,}\s*[-:]?\s*/i, '').trim();
-  if (afterId.length > 5) {
-    const esc = afterId.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m);
+  // If ephemeral ID is embedded anywhere, replace it with a wildcard token
+  if (hasEphemeralId(name)) {
+    const replaced = name.replace(/\b(?:RA|APL|CS|CR|SR|TC|KFWT|[A-Z]{2,6})?-?\d{4,}\b/gi, '__EPHEMERAL_ID__');
+    const esc = replaced
+      .replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m)
+      .replace(/__EPHEMERAL_ID__/g, '[A-Za-z0-9_-]+')
+      .replace(/\s+/g, '\\s+');
     return '/' + esc + '/i';
   }
-  // Fallback: replace digit runs in the full name with \d+ pattern.
-  const esc = name.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m).replace(/\d+/g, '\\d+');
+  const afterId = name.replace(/^.*?(?:RA|APL|[A-Z]{1,6}-?)\d{4,}\s*[-:]?\s*/i, '').trim();
+  if (afterId.length > 5) {
+    const esc = afterId.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m).replace(/\s+/g, '\\s+');
+    return '/' + esc + '/i';
+  }
+  const esc = name.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m).replace(/\d+/g, '\\d+').replace(/\s+/g, '\\s+');
   return '/' + esc + '/i';
 }
 /**
@@ -809,19 +935,33 @@ function locatorExpr(comp) {
       const re = ratingLocatorExpr(comp.rawExpr);
       if (re) return re;
     }
-    return '.' + comp.rawExpr;
+    let expr = comp.rawExpr || '';
+    if (expr && hasEphemeralId(expr)) {
+      expr = expr.replace(/\.filter\(\s*\{\s*hasText:\s*['"]([^'"]+)['"]\s*\}\s*\)/g, (match, text) => {
+        return `.filter({ hasText: ${stableRegexForEphemeral(text)} })`;
+      });
+    }
+    // Prevent strict mode violations on un-scoped class locators
+    if (/^locator\(/.test(expr) && !/\.(first|last|nth)\(/.test(expr) && !/\[id=/.test(expr) && !/^locator\(['"]#/.test(expr)) {
+      return '.' + expr + '.first()';
+    }
+    return '.' + expr;
   }
-  // ✅ Priority 0: Ưu tiên getByRole cho radio/checkbox nếu có label context
+  // ✅ Priority 0: PrimeFaces radio/checkbox: click via visible <label>, avoiding hidden <input>
   if (comp._preferRole && comp.role && comp.name) {
-    let s = `.getByRole(${tsString(comp.role)}`;
-    const parts = [];
-    parts.push(`name: ${tsString(comp.name)}`);
-    if (comp.exact) parts.push('exact: true');
-    s += `, { ${parts.join(', ')} }`;
-    return `${s})`;
+    if (comp.role === 'radio' || comp.role === 'checkbox') {
+      return ".locator('label:has-text(\"" + comp.name.replace(/"/g, '\\"') + "\")').first()";
+    }
+    return `.getByText(${tsString(comp.name)}, { exact: true })`;
   }
   // Smart PrimeFaces mappings
   if (t === 'role') {
+    if (comp.name === 'OK' || comp.member === 'okCell') {
+      return `.locator('.ui-dialog:visible button:has-text("OK"), .ui-dialog:visible .ui-button:has-text("OK")').or(this.frame.getByRole('button', { name: 'OK', exact: true })).or(this.frame.getByRole('gridcell', { name: 'OK', exact: true })).first()`;
+    }
+    if (comp.role === 'button' && /Next|Submit/i.test(comp.name)) {
+      return `.getByRole('button', { name: ${tsString(comp.name)} }).filter({ visible: true }).first()`;
+    }
     if (comp.role === 'button' && (comp.name === ' ui-button' || /ui-button/i.test(comp.name))) {
       return `.locator('[id*="sendBtn_menuButton"], .ui-splitbutton-menubutton:visible').last()`;
     }
@@ -837,6 +977,10 @@ function locatorExpr(comp) {
       if (comp.name != null) {
         if (hasEphemeralId(comp.name)) {
           parts.push('name: ' + stableRegexForEphemeral(comp.name));
+        } else if (comp.role === 'textbox') {
+          // Resilient to required asterisk (*) in accessible names like "Risk Title *"
+          const escName = comp.name.replace(/[/\\^$*+?.()|[\]{}]/g, (m) => '\\' + m);
+          parts.push('name: /^' + escName + '/i');
         } else {
           parts.push(`name: ${tsString(comp.name)}`);
           if (comp.exact) parts.push('exact: true');
@@ -847,6 +991,9 @@ function locatorExpr(comp) {
     return `${s})`;
   }
   if (t === 'text') {
+    if (hasEphemeralId(comp.text)) {
+      return `.getByText(${stableRegexForEphemeral(comp.text)})`;
+    }
     return comp.exact
       ? `.getByText(${tsString(comp.text)}, { exact: true })`
       : `.getByText(${tsString(comp.text)})`;
@@ -903,7 +1050,15 @@ function isLoginLocator(l) {
  * member hoặc null nếu recording không có phần tử page-level phù hợp.
  */
 function pickEntryMember(pageLocators) {
-  const candidates = pageLocators.filter((l) => !isLoginLocator(l));
+  const candidates = pageLocators.filter((l) => {
+    if (isLoginLocator(l)) return false;
+    // Exclude dynamic BPM task links that change each run (RA/APL/RAMP IDs)
+    const name = String(l.name || l.text || '').trim();
+    if (/\b(?:RA|APL|RAMP)\d*\b/i.test(name)) return false;
+    if (/Task start|Prio:|Category:|Responsible:|Created:/i.test(name)) return false;
+    if (l.rawExpr && /faces\/instances\//.test(l.rawExpr)) return false;
+    return true;
+  });
   const link = candidates.find((l) => l.locatorType === 'role' && l.role === 'link');
   const chosen = link || candidates[0] || null;
   return chosen ? chosen.member : null;
@@ -928,6 +1083,9 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   const lines = [];
   lines.push(`import { ${imports.join(', ')} } from '@playwright/test';`);
   lines.push(`import { ensureInteractiveAuth } from '${supportImport || '../support/interactive-auth'}';`);
+  const authImportPath = supportImport || '../support/interactive-auth';
+  const smartImportPath = authImportPath.replace('interactive-auth', 'smart-action');
+  lines.push(`import { smartClick, smartFill, smartPress } from '${smartImportPath}';`);
   lines.push('');
   lines.push('// Credentials come from the environment (.env via playwright.config.ts) so no secret is');
   lines.push('// baked into source. Override per-call by passing arguments to ensureAuthenticated().');
@@ -959,6 +1117,12 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   for (const l of pageLocators) {
     lines.push(`    this.${l.member} = page${locatorExpr(l)};`);
   }
+  // FIX 3: Emit dialog auto-handler into generated POM constructor
+  lines.push("    // Auto-dismiss browser dialogs (alert, confirm, beforeunload)");
+  lines.push("    this.page.on('dialog', async (dialog) => {");
+  lines.push("      console.log('[Auto-Dialog] ' + dialog.type() + ': ' + dialog.message().slice(0, 120));");
+  lines.push("      await dialog.accept().catch(() => {});");
+  lines.push('    });');
   lines.push('  }');
 
   // ── ensureAuthenticated(): resilient to "View Expired" / expired sessions ──
@@ -1029,9 +1193,16 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
     lines.push('      await usernameField.fill(username);');
     lines.push("      await this.page.getByRole('textbox', { name: 'Password' }).fill(password);");
     lines.push("      await this.page.getByRole('button', { name: 'Login' }).click();");
+    lines.push("      await usernameField.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});");
     lines.push('    }');
-    lines.push("    await this.page.waitForLoadState('networkidle');");
+    lines.push("    await this.page.waitForLoadState('domcontentloaded');");
+    lines.push("    await this.page.waitForLoadState('networkidle').catch(() => {});");
   }
+  // FIX 4: Emit iframe scroll-fix CSS into ensureAuthenticated
+  lines.push("    // Unlock Axon Ivy iframe overflow so all form buttons are reachable");
+  lines.push("    await this.page.addStyleTag({");
+  lines.push("      content: 'iframe[title=\"Task frame\"], .portal-page-body, .ui-layout-unit-content { overflow: auto !important; max-height: none !important; }'");
+  lines.push('    }).catch(() => {});');
   lines.push('  }');
 
   if (hasFrame && frameTitle) {
@@ -1072,6 +1243,15 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   lines.push('   * Safe to call anytime; resolves immediately if no loader is active.');
   lines.push('   */');
   lines.push('  async waitForAjax(timeout: number = 20000): Promise<void> {');
+  lines.push('    await this.page.waitForTimeout(250).catch(() => {});');
+  lines.push('    try {');
+  lines.push('      await this.page.waitForFunction(() => {');
+  lines.push('        const w = window as any;');
+  lines.push('        const jqDone = w.$ ? w.$.active === 0 : true;');
+  lines.push('        const pfDone = w.PrimeFaces?.ajax?.Queue ? w.PrimeFaces.ajax.Queue.isEmpty() : true;');
+  lines.push('        return jqDone && pfDone;');
+  lines.push('      }, { timeout: Math.min(timeout, 10000) }).catch(() => {});');
+  lines.push('    } catch (_) {}');
   lines.push("    const indicator = this.page.locator('.ajax-status-position, [id*=\"ajax-indicator-ajax-indicator\"]').first();");
   lines.push("    await indicator.waitFor({ state: 'hidden', timeout }).catch(() => {});");
   lines.push('  }');
@@ -1155,31 +1335,121 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
       const callArg = meta.param ? meta.param.name : '';
       lines.push('');
       lines.push(`  async ${methodName}(${param}): Promise<void> {`);
+      if (/okCell|clickOk|dblclickOk/i.test(methodName) || (l.name === 'OK')) {
+        lines.push("    await this.waitForAjax();");
+        lines.push("    const okBtn = this.frame.locator('.ui-dialog:visible button:has-text(\"OK\"), .ui-dialog:visible .ui-button:has-text(\"OK\"), .ui-dialog:visible [role=\"button\"]:has-text(\"OK\")').first();");
+        lines.push("    if (await okBtn.isVisible({ timeout: 3000 }).catch(() => false)) {");
+        lines.push("      await okBtn.click({ force: true, timeout: 5000 }).catch(() => {});");
+        lines.push("    } else {");
+        lines.push(`      await this.${l.member}.click({ force: true, timeout: 5000 }).catch(() => {});`);
+        lines.push("    }");
+        lines.push("    const _diag = this.frame.locator('.ui-dialog:visible');");
+        lines.push("    const _closed = await _diag.waitFor({ state: 'hidden', timeout: 4000 }).then(() => true).catch(() => false);");
+        lines.push("    if (!_closed && await _diag.isVisible().catch(() => false)) {");
+        lines.push("      await this.waitForAjax();");
+        lines.push("      await okBtn.click({ force: true, timeout: 5000 }).catch(() => {});");
+        lines.push("      await _diag.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});");
+        lines.push("    }");
+        lines.push("    await this.waitForAjax();");
+        lines.push("    return;");
+        lines.push("  }");
+        continue;
+      }
       if (action === 'click') {
         lines.push("    const ajaxIndicator = this.page.locator('.ajax-status-position, [id*=\"ajax-indicator-ajax-indicator\"]').first();");
         lines.push("    await ajaxIndicator.waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});");
       }
-      if (action === 'click' && l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
-        lines.push(`    const widget = this.page.frameLocator('iframe[name*="custom-widget"], iframe[src*="CustomMenuWidget"]');`);
-        lines.push("    const startItem = widget.getByRole('menuitem', { name: /^Start/i });");
-        lines.push("    await startItem.waitFor({ state: 'visible', timeout: 30000 });");
-        lines.push("    await startItem.hover({ force: true });");
-        lines.push("    await this.page.waitForTimeout(500);");
-        lines.push("    const riskItem = widget.getByRole('menuitem', { name: /Risk Assessment/i });");
-        lines.push("    await riskItem.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});");
-        lines.push("    await riskItem.hover({ force: true }).catch(() => {});");
-        lines.push("    await this.page.waitForTimeout(500);");
-        lines.push(`    await this.${l.member}.click({ force: true });`);
+      if (action === 'click' && l.role === 'radio' && l.name) {
+        lines.push(`    await this.${l.member}.scrollIntoViewIfNeeded().catch(() => {});`);
+        const _radioName = (l.name || l.text || l.member || '').replace(/'/g, "\\'");
+        const _radioFrame = l.isFrame ? ', frame: this.frame' : '';
+        lines.push(`    await smartClick(this.${l.member}, { name: '${_radioName}', role: 'radio'${_radioFrame} });`);
         lines.push('    return;');
+        lines.push('  }');
+        continue;
+      }
+      if (action === 'click' && l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
+        // FIX 5: 3-layer menu open strategy
+        // Playwright Codegen only records the final click, missing hover steps for collapsed menus.
+        lines.push("    // [L1] Skip if Task frame already visible (resumed session)");
+        lines.push("    const _tf = this.page.frameLocator('iframe[title=\"Task frame\"]');");
+        lines.push("    if (await _tf.locator('body').isVisible({ timeout: 2000 }).catch(() => false)) return;");
+        lines.push("    // [L2] Wait for widget iframe + body to be rendered");
+        lines.push("    await this.page.locator('iframe[name*=\"custom-widget\"], iframe[src*=\"CustomMenuWidget\"], iframe[title*=\"processes\"]').first().waitFor({ state: 'attached', timeout: 60000 }).catch(() => {});");
+        lines.push("    const _wf = this.page.frameLocator('iframe[name*=\"custom-widget\"], iframe[src*=\"CustomMenuWidget\"]');");
+        lines.push("    await _wf.locator('body').waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});");
+        lines.push("    await this.page.locator('.ajax-status-position').first().waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});");
+        lines.push("    // [L3] Click Start Process directly if already visible, otherwise hover parent items");
+        lines.push("    const _sp = _wf.getByRole('menuitem', { name: 'Start Process' }).or(_wf.locator('a.ui-menuitem-link:has-text(\"Start Process\")')).first();");
+        lines.push("    const isDirectlyVisible = await _sp.isVisible({ timeout: 3000 }).catch(() => false);");
+        lines.push("    if (!isDirectlyVisible) {");
+        lines.push("      const _sm = _wf.getByRole('menuitem', { name: /^Start/i }).first();");
+        lines.push("      if (await _sm.isVisible({ timeout: 5000 }).catch(() => false)) {");
+        lines.push("        await _sm.hover({ force: true }).catch(() => {});");
+        lines.push("        await this.page.waitForTimeout(500);");
+        lines.push("      }");
+        lines.push("      const _rs = _wf.getByRole('menuitem', { name: /Risk Assessment/i }).first();");
+        lines.push("      if (await _rs.isVisible({ timeout: 3000 }).catch(() => false)) {");
+        lines.push("        await _rs.hover({ force: true }).catch(() => {});");
+        lines.push("        await this.page.waitForTimeout(500);");
+        lines.push("      }");
+        lines.push("    }");
+        lines.push("    // [L4] Execute click with multiple fallbacks");
+        lines.push("    await _sp.click({ force: true, timeout: 10000 }).catch(async () => {");
+        lines.push("      await _wf.locator('a').filter({ hasText: 'Start Process' }).first().click({ force: true, timeout: 5000 }).catch(async () => {");
+        lines.push("        await _wf.locator('a').filter({ hasText: 'Start Process' }).first().evaluate((el: any) => el.click()).catch(() => {});");
+        lines.push("      });");
+        lines.push("    });");
+        lines.push("    await _tf.locator('body').waitFor({ state: 'visible', timeout: 60000 });");
+        lines.push('    return;');
+        lines.push('  }'); // Close generated async method
+        continue; // Skip rest of loop iteration (no default click needed)
       }
       // Priority 6: scrollIntoView for gridcell (Virtual Scroll DataTable rows)
       if (action === 'click' && (l.role === 'gridcell' || (l.rawExpr && l.rawExpr.includes("'gridcell'")) || /gridcell|cell/i.test(l.member))) {
         lines.push(`    await this.${l.member}.scrollIntoViewIfNeeded().catch(() => {});`);
       }
       if (action === 'press') {
-        lines.push('    await this.page.waitForTimeout(150);');
-        lines.push(`    await this.${l.member}.press(${callArg});`);
-        lines.push('    await this.page.waitForTimeout(150);');
+        const _pressName = (l.name || l.text || l.member || '').replace(/'/g, "\\'");
+        lines.push(`    await smartPress(this.${l.member}, ${callArg}, { name: '${_pressName}' });`);
+      } else if (action === 'click') {
+        const _clickName = (l.name || l.text || l.member || '').replace(/'/g, "\\'");
+        const _clickRole = (l.role || '').replace(/'/g, "\\'");
+        const _clickFrame = l.isFrame ? `, frame: this.frame` : '';
+        lines.push(`    await smartClick(this.${l.member}, { name: '${_clickName}', role: '${_clickRole}'${_clickFrame} });`);
+        if (/cell|gridcell/i.test(l.member) || l.role === 'gridcell') {
+          lines.push('    await this.waitForAjax();');
+        }
+        if (/Ok|Confirm|Close|Dismiss/i.test(_clickName || l.member)) {
+          lines.push("    await this.frame.locator('.ui-dialog:visible').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});");
+          lines.push('    await this.waitForAjax();');
+        } else if (/Next|Submit|Save|Finish/i.test(_clickName || l.member)) {
+          lines.push('    await this.waitForAjax();');
+        }
+        if (/Trigger$/i.test(l.member) || /ui-selectonemenu-trigger/i.test(l.css || '')) {
+          lines.push("    await this.frame.locator('.ui-selectonemenu-panel:visible').waitFor({ state: 'visible', timeout: 7000 }).catch(() => {});");
+        }
+        if (/Checkbox$|Listitem$/i.test(l.member) || l.role === 'listitem') {
+          lines.push("    const _closeMenu = this.frame.locator('.ui-selectcheckboxmenu-panel:visible .ui-selectcheckboxmenu-close, .ui-selectcheckboxmenu-panel:visible a[aria-label=\"Close\"]').first();");
+          lines.push("    if (await _closeMenu.isVisible({ timeout: 1000 }).catch(() => false)) {");
+          lines.push("      await _closeMenu.click({ force: true, timeout: 2000 }).catch(() => {});");
+          lines.push("    } else {");
+          lines.push("      await this.page.keyboard.press('Escape').catch(() => {});");
+          lines.push("    }");
+        }
+      } else if (action === 'fill') {
+        const _fillName = (l.name || l.text || l.member || '').replace(/'/g, "\\'");
+        const _fillRole = (l.role || 'textbox').replace(/'/g, "\\'");
+        const _fillFrame = l.isFrame ? `, frame: this.frame` : '';
+        lines.push(`    await this.${l.member}.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});`);
+        lines.push(`    await smartFill(this.${l.member}, ${callArg}, { name: '${_fillName}', role: '${_fillRole}'${_fillFrame} });`);
+      } else if (action === 'dblclick') {
+        lines.push(`    await this.${l.member}.dblclick();`);
+        lines.push("    const _activeDiag = this.frame.locator('.ui-dialog:visible');");
+        lines.push("    if (await _activeDiag.isVisible().catch(() => false)) {");
+        lines.push("      await _activeDiag.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});");
+        lines.push("      await this.waitForAjax();");
+        lines.push("    }");
       } else {
         lines.push(`    await this.${l.member}.${action}(${callArg});`);
       }
@@ -1432,6 +1702,155 @@ function renderAutomationCall(member, action, values) {
  * Khối automation được điền sẵn từ recording nên chạy được ngay; Tester chỉ cần
  * chỉnh sửa (thêm/bớt/đổi giá trị) rồi chạy md-to-spec để sinh lại spec.
  */
+
+/**
+ * 🧹 Intelligent Step Cleaner Pipeline:
+ * Cleans recording noise and tester mistakes before generating BDD and Spec:
+ * 1. Prunes redundant click right before fill on the same input element.
+ * 2. Deduplicates consecutive duplicate clicks on checkboxes/toggles and dropdown options.
+ * 3. Prunes premature Next/Submit clicks caused by tester realizing a field was missed.
+ */
+function cleanRecordedSteps(steps, locators) {
+  if (!steps || !steps.length) return [];
+  const locMap = new Map((locators || []).map((l) => [l.member, l]));
+  let result = [...steps];
+
+  // Pass 1: Prune click immediately before fill on the SAME member
+  const pass1 = [];
+  for (let i = 0; i < result.length; i++) {
+    const curr = result[i];
+    const next = result[i + 1];
+    if (curr.action === 'click' && next && next.action === 'fill' && curr.member === next.member) {
+      continue; // Skip redundant click before fill
+    }
+    pass1.push(curr);
+  }
+
+  // Pass 2: Deduplicate consecutive duplicate actions on toggles / options
+  const pass2 = [];
+  for (let i = 0; i < pass1.length; i++) {
+    const curr = pass1[i];
+    const next = pass1[i + 1];
+
+    const loc = locMap.get(curr.member);
+    const isToggle =
+      loc &&
+      (loc.role === 'checkbox' ||
+        loc.role === 'radio' ||
+        /chkbox|checkbox|radio/i.test(loc.css || '') ||
+        /Checkbox|Radio/i.test(curr.member));
+    if (curr.action === 'click' && next && next.action === 'click' && curr.member === next.member && isToggle) {
+      continue;
+    }
+
+    if (curr.member && curr.member.endsWith('Option') && next && next.member === curr.member) {
+      continue;
+    }
+
+    // Deduplicate repeated trigger/label + option sequence for the same option
+    const nextNext = pass1[i + 2];
+    if (
+      curr.action === 'click' &&
+      curr.member &&
+      curr.member.endsWith('Option') &&
+      next &&
+      next.action === 'click' &&
+      (/LabelElement|Trigger$/i.test(next.member) || /ui-selectonemenu/i.test(next.member)) &&
+      nextNext &&
+      nextNext.action === 'click' &&
+      nextNext.member === curr.member
+    ) {
+      pass2.push(curr);
+      i += 2; // skip the redundant trigger/label and the second option click
+      continue;
+    }
+
+    pass2.push(curr);
+  }
+
+  // Pass 3: Prune premature Next/Submit clicks caused by missed required fields/validation retry
+  // Pattern: [click Next/Submit] -> [1 to 4 form field entries] -> [click Next/Submit]
+  // In live recordings, testers often click Next too early, encounter a validation error
+  // (e.g. "What existing measures are reduced? is required"), fill the missing field(s),
+  // and click Next again.
+  // The correct automated test order is: fill the missing field(s) BEFORE Next, and click Next ONCE.
+  const pass3 = [];
+  for (let i = 0; i < pass2.length; i++) {
+    const curr = pass2[i];
+    if (/Next|Submit|Continue/i.test(curr.member) && curr.action === 'click') {
+      // Look ahead for the next click on Next/Submit
+      let nextBtnIdx = -1;
+      for (let j = i + 1; j < pass2.length; j++) {
+        if (/Next|Submit|Continue/i.test(pass2[j].member) && pass2[j].action === 'click') {
+          nextBtnIdx = j;
+          break;
+        }
+      }
+
+      if (nextBtnIdx !== -1) {
+        const intermediate = pass2.slice(i + 1, nextBtnIdx);
+        const isFieldEntry = (st) =>
+          st.action === 'fill' ||
+          st.action === 'press' ||
+          (st.action === 'click' && /Option|Checkbox|Radio|Input|Textarea|Trigger$/i.test(st.member));
+
+        if (intermediate.length > 0 && intermediate.length <= 4 && intermediate.every(isFieldEntry)) {
+          // Reorder: intermediate missing fields first, then ONE Next click
+          pass3.push(...intermediate);
+          pass3.push(pass2[nextBtnIdx]);
+          i = nextBtnIdx; // Skip past the second Next click
+          continue;
+        }
+      }
+    }
+
+    // Only deduplicate immediate consecutive duplicate Next clicks
+    const next = pass2[i + 1];
+    if (/Next|Submit|Continue/i.test(curr.member) && curr.action === 'click' && next && next.member === curr.member && next.action === 'click') {
+      continue;
+    }
+    pass3.push(curr);
+  }
+
+  // Pass 4: Prune redundant background dismiss clicks (clicking static div container only to blur/close dropdown)
+  // In live recordings, human testers click outside (on the background container div) to close dropdowns.
+  // Pattern: A click on a generic div container (rawExpr has locator('div').filter or member ends in Element without role)
+  // that immediately follows an option, listitem, or checkbox selection.
+  const pass4 = [];
+  for (let i = 0; i < pass3.length; i++) {
+    const curr = pass3[i];
+    const prev = pass3[i - 1];
+    const loc = locMap.get(curr.member);
+
+    const isLayoutClick =
+      curr.action === 'click' &&
+      (!loc || !loc.role || loc.role === '') &&
+      (
+        /^(?:div|span)Nth\d+/i.test(curr.member) ||
+        (loc && loc.rawExpr && /(?:\.ui-g\s*>\s*div|locator\(['"]div['"]\)\.filter)/i.test(loc.rawExpr)) ||
+        (loc && loc.css && /\.ui-g\s*>\s*div/i.test(loc.css)) ||
+        (/Element$/i.test(curr.member) && loc && !loc.role && /filter|div/i.test(loc.rawExpr || ''))
+      );
+
+    const isBackgroundDismiss =
+      isLayoutClick &&
+      prev &&
+      (
+        prev.member.endsWith('Option') ||
+        prev.member.endsWith('Listitem') ||
+        prev.member.endsWith('Checkbox') ||
+        /Option|Listitem|Checkbox|Text$/i.test(prev.member)
+      );
+
+    if (isBackgroundDismiss) {
+      continue; // Skip redundant background blur click
+    }
+    pass4.push(curr);
+  }
+
+  return pass4;
+}
+
 function renderTestcaseMd(pageClass, key, recordingRel, model) {
   const { locators } = model;
   const pageLocators = locators.filter((l) => !l.isFrame);
@@ -1443,7 +1862,8 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   const whenLines = [];
   const steps = (model.recordedSteps && model.recordedSteps.length) ? model.recordedSteps : [];
   if (steps.length) {
-    for (const s of steps) {
+    const cleanedSteps = cleanRecordedSteps(steps, locators);
+    for (const s of cleanedSteps) {
       const line = renderAutomationCall(s.member, s.action, s.value != null ? [s.value] : []);
       if (line) whenLines.push(line);
     }
@@ -1496,7 +1916,6 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   L.push('');
   L.push('```automation');
   L.push('Given: Tester mở ASAP và đăng nhập');
-  L.push('  goto');
   L.push('  ensureAuthenticated');
   L.push('When: Thao tác trên module ' + title);
   if (whenLines.length) {
@@ -1508,7 +1927,7 @@ function renderTestcaseMd(pageClass, key, recordingRel, model) {
   if (entryMember) {
     L.push('  expect ' + entryMember + ' visible');
   } else {
-    L.push('  # expect <member> visible');
+    L.push('  wait 3000');
   }
   L.push('```');
   L.push('');
@@ -1896,7 +2315,13 @@ function main() {
   console.log(
     `[MD] BDD scenario complete: ${mdGenerated}/${keys.length} file(s) ${forceMd ? 'created/overwritten' : 'created'}.`
   );
-  console.log('   -> Edit the .md file then run: npm run md-to-spec <KEY> (0 AI tokens).');
+  console.log('   -> Automatically translating BDD scenario to spec via md-to-spec...');
+  const mdToSpecPath = path.join(__dirname, 'md-to-spec.js');
+  if (fs.existsSync(mdToSpecPath)) {
+    for (const key of keys) {
+      spawnSync(process.execPath, [mdToSpecPath, key], { stdio: 'inherit', cwd: ROOT_DIR });
+    }
+  }
   console.log('------------------------------------------------------\n');
 }
 

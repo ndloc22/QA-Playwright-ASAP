@@ -116,6 +116,21 @@ function main() {
     console.error(`\n\x1b[31m[ERROR] Failed to run Playwright: ${result.error.message}\x1b[0m\n`);
     process.exit(1);
   }
+
+  const testPassed = result.status === 0;
+  const shouldHeal = argv.includes('--heal') || process.env.AUTO_HEAL === '1';
+
+  if (!testPassed && shouldHeal) {
+    console.log('\n\x1b[33m[AI-HEAL] Test failed and --heal active. Triggering AI Healer...\x1b[0m');
+    const healScript = path.join(__dirname, 'ai-healer.js');
+    const healRes = safeSpawnSync(process.execPath, [healScript, key], {
+      stdio: 'inherit',
+      cwd: ROOT_DIR,
+      env: process.env,
+    });
+    process.exit(healRes.status ?? 1);
+  }
+
   process.exit(result.status == null ? 1 : result.status);
 }
 

@@ -206,26 +206,39 @@ export async function smartClick(primary: Locator, opts: SmartActionOptions = {}
       } catch (_) {}
     }
     if (!root) {
-      
-    // 🛡️ Self-Healing cấp cao cho Option: nếu dropdown vô tình bị đóng do AJAX re-render, tự re-open trigger
+      console.error(`\x1b[31m[SMART-FAIL]\x1b[0m No root context for: ${stepDesc}`);
+      dumpFailureContext(stepDesc, 'click', opts, primaryErr);
+      throw primaryErr;
+    }
+
+    // 🛡️ Self-Healing cấp cao cho Option: nếu option không bấm được (dropdown đóng hoặc chưa mở đúng panel)
     if (isOption) {
       try {
-        const trigger = (root as any).locator('.ui-selectonemenu.ui-state-focus .ui-selectonemenu-trigger, .ui-selectonemenu.ui-state-hover .ui-selectonemenu-trigger, .ui-selectonemenu-trigger:visible').first();
-        if (await trigger.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await trigger.click({ timeout: 3000 }).catch(() => {});
-          await (root as any).locator('.ui-selectonemenu-panel:visible').first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
-          const optionItem = (root as any).locator(`.ui-selectonemenu-panel:visible li:has-text("${opts.name}"), .ui-selectonemenu-panel:visible [data-label="${opts.name}"]`).first();
-          if (await optionItem.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await optionItem.click({ timeout: 3000 });
-            console.warn(`${HEALED_PREFIX} Bước ${stepDesc} phục hồi bằng cách re-open dropdown panel.`);
+        // 1. Thử click option trong bất kỳ dropdown panel nào đang hiển thị
+        const anyVisiblePanel = (root as any).locator('.ui-selectonemenu-panel:visible');
+        if (await anyVisiblePanel.count().catch(() => 0) > 0) {
+          const directItem = anyVisiblePanel.locator(`li:has-text("${opts.name}"), [data-label="${opts.name}"]`).first();
+          if (await directItem.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await directItem.click({ timeout: 3000 });
+            console.warn(`${HEALED_PREFIX} Bước ${stepDesc} phục hồi bằng click option trong panel đang mở.`);
+            return;
+          }
+        }
+        // 2. Nếu panel chưa mở hoặc mở sai panel, tìm dropdown trigger chứa option này và mở lại
+        const allTriggers = (root as any).locator('.ui-selectonemenu-trigger:visible');
+        const triggerCount = await allTriggers.count().catch(() => 0);
+        for (let tIdx = 0; tIdx < Math.min(triggerCount, 7); tIdx++) {
+          const trg = allTriggers.nth(tIdx);
+          await trg.click({ timeout: 2000 }).catch(() => {});
+          const panel = (root as any).locator('.ui-selectonemenu-panel:visible').last();
+          const targetItem = panel.locator(`li:has-text("${opts.name}"), [data-label="${opts.name}"]`).first();
+          if (await targetItem.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await targetItem.click({ timeout: 3000 });
+            console.warn(`${HEALED_PREFIX} Bước ${stepDesc} phục hồi bằng cách mở đúng dropdown trigger #${tIdx + 1}.`);
             return;
           }
         }
       } catch (_) {}
-    }
-    console.error(`\x1b[31m[SMART-FAIL]\x1b[0m No root context for: ${stepDesc}`);
-      dumpFailureContext(stepDesc, 'click', opts, primaryErr);
-      throw primaryErr;
     }
     const fallbacks = buildFallbackLocators(root, opts);
     for (let i = 0; i < fallbacks.length; i++) {

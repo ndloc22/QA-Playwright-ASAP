@@ -449,14 +449,15 @@ function deriveBaseName(comp) {
     const raw = comp.rawExpr;
     if (/name:\s*['"]Start Process['"]/i.test(raw)) return 'startProcessMenuitem';
     const roleMatch = raw.match(/getByRole\(\s*['"]([^'"]+)['"](?:\s*,\s*\{\s*name:\s*(?:['"]([^'"]+)['"]|\/([^/]+)\/)\s*\})?/);
-    const filterMatch = raw.match(/\.filter\(\s*\{\s*hasText:\s*['"]([^'"]+)['"]/);
+    const filterMatch = raw.match(/\.filter\(\s*\{\s*hasText:\s*(?:['"]([^'"]+)['"]|\/\^?([^$\n\r/]+)\$?\/)/);
     const textMatch = raw.match(/getByText\(\s*['"]([^'"]+)['"]/);
 
     if (roleMatch) {
       const role = roleMatch[1];
       let name = (roleMatch[2] || roleMatch[3] || '').replace(/[^\w\s]/g, '').trim();
       if (!name && filterMatch) {
-        name = filterMatch[1].slice(0, 25).replace(/[^\w\s]/g, '').trim();
+        const fText = filterMatch[1] || filterMatch[2] || '';
+        name = fText.slice(0, 30).replace(/[^\w\s]/g, '').trim();
       }
       if (name) return camelIdentifier(name) + pascal(role);
       return camelIdentifier(role);
@@ -614,6 +615,52 @@ const POM_ACTION_META = {
  * Bóc tách "mô hình POM" từ 1 recording: danh sách locator sạch (dedup) kèm frame
  * context và tập action đã ghi lại.
  */
+
+/**
+ * Detect the exact 0-indexed Likelihood question (0..6) from an option's visible text.
+ * Prevents question desynchronization when a tester skips questions or clicks non-sequentially.
+ */
+function detectLikelihoodQuestionIndex(optionText, prevIndex) {
+  if (!optionText) return null;
+  const t = optionText.trim().toLowerCase();
+  // Question 0: Technical skills of attacker
+  if (/programming|network|technical skill|advanced skill|security specialist/i.test(t)) {
+    return 0;
+  }
+  // Question 1: How easy is it for an attacker to discover
+  if (/practically impossible|difficult to discover/i.test(t)) {
+    return 1;
+  }
+  // Question 2: What resources and opportunities
+  if (/special access|access or resources|resources and opportunities/i.test(t)) {
+    return 2;
+  }
+  // Question 3: How well known is this vulnerability
+  if (/^hidden$|theoretical|widely known/i.test(t)) {
+    return 3;
+  }
+  // Question 4: In which group a potential attacker could belong to
+  if (/developer|system administrator|intranet user|authenticated user|anonymous internet user/i.test(t)) {
+    return 4;
+  }
+  // Question 5: How likely is an attack to be detected
+  if (/active detection|logged and reviewed|passive detection/i.test(t)) {
+    return 5;
+  }
+  // Question 6: How much do existing measures reduce the existing risk
+  if (/completely|considerably|somewhat/i.test(t)) {
+    return 6;
+  }
+  // "Not at all" can be in Question 5 or Question 6!
+  if (/not at all/i.test(t)) {
+    if (prevIndex != null && prevIndex >= 5) {
+      return 6;
+    }
+    return 5;
+  }
+  return null;
+}
+
 function extractPomModel(source) {
   const frameMatch = source.match(/iframe\[title="([^"]+)"\]/);
   const frameTitle = frameMatch ? frameMatch[1] : null;
@@ -717,9 +764,21 @@ function extractPomModel(source) {
     if (riskAnsMatch) {
       currentRiskAnswerIndex = parseInt(riskAnsMatch[1], 10);
     } else if (locatorPart.includes('.ui-selectonemenu-trigger') || (locatorPart.includes('gridcell') && /Please select/i.test(line))) {
-      const nextRaw = lines[lineIdx + 1] || '';
-      if (nextRaw.includes("getByRole('option'")) {
-        if (currentRiskAnswerIndex == null) {
+      // Look ahead up to 5 lines to find the target option text
+      let targetOptionText = null;
+      for (let k = lineIdx + 1; k < Math.min(lines.length, lineIdx + 6); k++) {
+        const optMatch = lines[k].match(/getByRole\(['"]option['"],\s*\{\s*name:\s*['"]([^'"]+)['"]/);
+        if (optMatch) {
+          targetOptionText = optMatch[1];
+          break;
+        }
+      }
+
+      if (targetOptionText) {
+        const detectedQ = detectLikelihoodQuestionIndex(targetOptionText, currentRiskAnswerIndex);
+        if (detectedQ != null) {
+          currentRiskAnswerIndex = detectedQ;
+        } else if (currentRiskAnswerIndex == null) {
           currentRiskAnswerIndex = 0;
         } else if (currentRiskAnswerIndex < 6) {
           currentRiskAnswerIndex += 1;
@@ -1715,7 +1774,7 @@ function cleanRecordedSteps(steps, locators) {
   const locMap = new Map((locators || []).map((l) => [l.member, l]));
   let result = [...steps];
 
-  // Pass 1: Prune click immediately before fill on the SAME member
+  // Pass 1: Prune click immediately before fill on the SAME member and html clicks
   const pass1 = [];
   for (let i = 0; i < result.length; i++) {
     const curr = result[i];
@@ -1723,24 +1782,56 @@ function cleanRecordedSteps(steps, locators) {
     if (curr.action === 'click' && next && next.action === 'fill' && curr.member === next.member) {
       continue; // Skip redundant click before fill
     }
+    if (curr.action === 'click' && /^html$/i.test(curr.member)) {
+      continue; // Skip root html focus click
+    }
     pass1.push(curr);
   }
 
-  // Pass 2: Deduplicate consecutive duplicate actions on toggles / options
-  const pass2 = [];
+  // Pass 1.5: Prune abandoned trigger clicks (triggers clicked without choosing an option)
+  const pass15 = [];
   for (let i = 0; i < pass1.length; i++) {
     const curr = pass1[i];
-    const next = pass1[i + 1];
+    const isTrigger = /Trigger$|uiSelectonemenu/i.test(curr.member);
+    if (curr.action === 'click' && isTrigger) {
+      // Look ahead up to 4 steps: is there an option click before the next trigger/action?
+      let hasOption = false;
+      for (let j = i + 1; j < Math.min(pass1.length, i + 5); j++) {
+        if (/Option$/i.test(pass1[j].member)) {
+          hasOption = true;
+          break;
+        }
+        if (/Button$|Input$|Cell$/i.test(pass1[j].member)) {
+          break;
+        }
+      }
+      if (!hasOption) {
+        continue; // Prune abandoned trigger click
+      }
+    }
+    pass15.push(curr);
+  }
+
+  // Pass 2: Deduplicate consecutive duplicate actions on toggles / options / triggers
+  const pass2 = [];
+  for (let i = 0; i < pass15.length; i++) {
+    const curr = pass15[i];
+    const next = pass15[i + 1];
 
     const loc = locMap.get(curr.member);
-    const isToggle =
-      loc &&
-      (loc.role === 'checkbox' ||
-        loc.role === 'radio' ||
-        /chkbox|checkbox|radio/i.test(loc.css || '') ||
-        /Checkbox|Radio/i.test(curr.member));
-    if (curr.action === 'click' && next && next.action === 'click' && curr.member === next.member && isToggle) {
-      continue;
+    const isToggleOrTrigger =
+      (curr.member && (/Trigger$/i.test(curr.member) || /Checkbox|Radio/i.test(curr.member))) ||
+      (loc && (loc.role === 'checkbox' || loc.role === 'radio' || loc.role === 'combobox' || /trigger/i.test(loc.css || '')));
+
+    // Deduplicate consecutive clicks on the same trigger or consecutive trigger clicks
+    if (curr.action === 'click' && next && next.action === 'click' && isToggleOrTrigger) {
+      if (curr.member === next.member) {
+        continue;
+      }
+      // If two trigger clicks occur in a row for the same dropdown question (e.g. riskAnswer3Trigger followed by riskAnswer3LabelElement)
+      if (/Trigger|LabelElement/i.test(curr.member) && /Trigger|LabelElement/i.test(next.member)) {
+        continue;
+      }
     }
 
     if (curr.member && curr.member.endsWith('Option') && next && next.member === curr.member) {
@@ -1748,7 +1839,7 @@ function cleanRecordedSteps(steps, locators) {
     }
 
     // Deduplicate repeated trigger/label + option sequence for the same option
-    const nextNext = pass1[i + 2];
+    const nextNext = pass15[i + 2];
     if (
       curr.action === 'click' &&
       curr.member &&
@@ -1824,11 +1915,11 @@ function cleanRecordedSteps(steps, locators) {
 
     const isLayoutClick =
       curr.action === 'click' &&
-      (!loc || !loc.role || loc.role === '') &&
       (
         /^(?:div|span)Nth\d+/i.test(curr.member) ||
-        (loc && loc.rawExpr && /(?:\.ui-g\s*>\s*div|locator\(['"]div['"]\)\.filter)/i.test(loc.rawExpr)) ||
-        (loc && loc.css && /\.ui-g\s*>\s*div/i.test(loc.css)) ||
+        /^actionElement$/i.test(curr.member) ||
+        (loc && loc.rawExpr && /(?:\.ui-g\s*>\s*div|locator\(['"]div['"]\)|\.filter)/i.test(loc.rawExpr)) ||
+        (loc && loc.css && /(?:\.ui-g\s*>\s*div|div:nth-child)/i.test(loc.css)) ||
         (/Element$/i.test(curr.member) && loc && !loc.role && /filter|div/i.test(loc.rawExpr || ''))
       );
 

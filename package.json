@@ -16,6 +16,7 @@
         "md-to-spec": "node scripts/md-to-spec.js",
         "sync-specs:from-md": "node scripts/md-to-spec.js",
         "test:function": "node scripts/run-function.js",
+        "test:agent": "node scripts/run-agent.js",
         "fetch-ticket": "node scripts/fetch-jira.js",
         "create-subtask": "node scripts/create-subtask.js",
         "generate-codebase-specs": "node scripts/generate-codebase-specs.js",

@@ -1,13 +1,13 @@
-/**
- * E.ON Run Function -- execute testcase directly (headed UI) with manual SSO/MFA hand-off.
+﻿/**
+ * E.ON Run Function -- Mode 1: Native Deterministic Playwright Runner
  *
- * Runs a function's spec in headed mode with interactive SSO fallback.
+ * Runs a function's spec in headed mode with interactive SSO fallback (0 token, pure code).
  *
  * Usage:
  *   npm run test:function SEARCH_TELECONTROL
  *   npm run test:function SEARCH_TELECONTROL -- -g "01"        # filter single scenario
  *   npm run test:function SEARCH_TELECONTROL -- --debug        # step-by-step debug
- *   SSO_TIMEOUT=180000 npm run test:function SEARCH_TELECONTROL  # custom SSO wait
+ *   npm run test:function SEARCH_TELECONTROL -- --slowmo 600   # custom slow motion
  */
 
 const path = require('path');
@@ -66,8 +66,9 @@ function main() {
 
   if (!key) {
     console.log('\n\x1b[33mUsage: npm run test:function <FUNCTION_NAME> [-- <playwright args>]\x1b[0m');
-    console.log('   Example: npm run test:function SEARCH_TELECONTROL');
-    console.log('            npm run test:function SEARCH_TELECONTROL -- -g "01" --debug\n');
+    console.log('   Example: npm run test:function CREATE_RISK_REQUEST');
+    console.log('            npm run test:function CREATE_RISK_REQUEST -- -g "01" --debug');
+    console.log('   👉 Muốn chạy bằng AI Agent? Dùng: npm run test:agent <FUNCTION_NAME>\n');
     process.exit(1);
   }
 
@@ -86,15 +87,25 @@ function main() {
     process.exit(1);
   }
 
-  console.log('======================================================');
-  console.log(` [RUN] DIRECT (headed) + SSO hand-off: ${key}`);
-  console.log('======================================================');
-  console.log(`  * Spec:        ${specRel}`);
-  console.log(`  * SSO:         INTERACTIVE_SSO=1 (pauses for manual login if needed)`);
-  console.log(`  * Timeout:     ${Math.round((Number(process.env.SSO_TIMEOUT) || 120000) / 1000)}s (override via SSO_TIMEOUT ms)`);
-  console.log(`  * Mode:        --headed (browser visible, NOT headless)`);
+  // Handle slowmo flag
+  const slowmoIdx = passthrough.indexOf('--slowmo');
+  let slowmoVal = process.env.SLOWMO;
+  if (slowmoIdx !== -1 && passthrough[slowmoIdx + 1]) {
+    slowmoVal = passthrough[slowmoIdx + 1];
+    passthrough.splice(slowmoIdx, 2);
+  }
+
+  console.log('================================================================');
+  console.log(` 🚀 [MODE 1: NATIVE RUNNER] DIRECT (headed) + POM: ${key}`);
+  console.log('================================================================');
+  console.log(`  * Target Spec: ${specRel}`);
+  console.log(`  * SSO Auth:    INTERACTIVE_SSO=1 (.auth/user.json reuse)`);
+  console.log(`  * Timeout:     ${Math.round((Number(process.env.SSO_TIMEOUT) || 120000) / 1000)}s`);
+  console.log(`  * Browser:     Chromium --headed (Full-HD)`);
+  console.log(`  * SlowMo:      ${slowmoVal || 400}ms per action`);
+  console.log(`  * Cost:        0 Tokens (Deterministic Execution)`);
   if (passthrough.length) console.log(`  * Extra flags: ${passthrough.join(' ')}`);
-  console.log('');
+  console.log('----------------------------------------------------------------\n');
 
   const npxBin = resolveWindowsBinary('npx');
   const args = [
@@ -106,10 +117,13 @@ function main() {
     ...passthrough,
   ];
 
+  const env = { ...process.env, INTERACTIVE_SSO: '1' };
+  if (slowmoVal) env.SLOWMO = String(slowmoVal);
+
   const result = safeSpawnSync(npxBin, args, {
     stdio: 'inherit',
     cwd: ROOT_DIR,
-    env: { ...process.env, INTERACTIVE_SSO: '1' },
+    env,
   });
 
   if (result.error) {

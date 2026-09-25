@@ -865,9 +865,9 @@ function extractPomModel(source) {
       if (isDropdown) {
         if (panelId) {
           const shortId = panelId.split(':').pop();
-          comp.css = `[id*="${shortId}_panel"] .ui-chkbox-box, .ui-selectcheckboxmenu-panel:visible .ui-chkbox-box`;
+          comp.css = `[id*="${shortId}_panel"] .ui-selectcheckboxmenu-items .ui-chkbox-box, .ui-selectcheckboxmenu-panel:visible .ui-selectcheckboxmenu-items .ui-chkbox-box`;
         } else {
-          comp.css = '.ui-selectcheckboxmenu-panel:visible .ui-chkbox-box';
+          comp.css = '.ui-selectcheckboxmenu-panel:visible .ui-selectcheckboxmenu-items .ui-chkbox-box';
         }
         if (panelContext) {
           comp.name = panelContext;
@@ -1918,8 +1918,9 @@ function cleanRecordedSteps(steps, locators) {
       (
         /^(?:div|span)Nth\d+/i.test(curr.member) ||
         /^actionElement$/i.test(curr.member) ||
+        /^uiG(?:\d+)?Element$/i.test(curr.member) ||
         (loc && loc.rawExpr && /(?:\.ui-g\s*>\s*div|locator\(['"]div['"]\)|\.filter)/i.test(loc.rawExpr)) ||
-        (loc && loc.css && /(?:\.ui-g\s*>\s*div|div:nth-child)/i.test(loc.css)) ||
+        (loc && loc.css && /(?:\.ui-g(?:-\d+)?\b|\.ui-g\s*>\s*div|div:nth-child)/i.test(loc.css)) ||
         (/Element$/i.test(curr.member) && loc && !loc.role && /filter|div/i.test(loc.rawExpr || ''))
       );
 

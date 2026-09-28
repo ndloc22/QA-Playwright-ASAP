@@ -20,6 +20,7 @@
 import { type FrameLocator, type Locator, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { waitAjaxIdle as pfWaitAjaxIdle } from './primefaces';
 
 const FAST_TIMEOUT_MS = 7000;
 const HEALED_PREFIX = '\x1b[33m[SELF-HEALED]\x1b[0m';
@@ -34,19 +35,94 @@ export interface SmartActionOptions {
   scrollFirst?: boolean;
 }
 
-function dumpFailureContext(stepDesc: string, action: string, opts: SmartActionOptions, err: any) {
+function safeSelector(primary?: Locator): string {
+  if (!primary) return '';
+  try {
+    // Playwright Locator.toString() -> "locator('...')"; đủ để Healer nhận diện selector đã thử.
+    const s = String(primary);
+    return s.length > 500 ? s.slice(0, 500) : s;
+  } catch (_) {
+    return '';
+  }
+}
+
+function resolveFrameUrl(root: Page | FrameLocator | null): string {
+  if (!root) return '';
+  try {
+    const anyRoot = root as any;
+    if (typeof anyRoot.url === 'function') return String(anyRoot.url() || '');
+    if (typeof anyRoot.page === 'function') {
+      const p = anyRoot.page();
+      if (p && typeof p.url === 'function') return String(p.url() || '');
+    }
+  } catch (_) {}
+  return '';
+}
+
+// Best-effort: tìm artifact (trace.zip / screenshot) mới nhất trong test-results để
+// AI Healer định vị. Trace thường chỉ ghi khi test kết thúc nên có thể chưa tồn tại tại
+// thời điểm dump — khi đó trả '' và Healer sẽ tự quét lại.
+function findLatestArtifact(resultsDir: string, matcher: RegExp): string {
+  try {
+    const stack = [resultsDir];
+    let newest = '';
+    let newestMtime = 0;
+    while (stack.length) {
+      const dir = stack.pop() as string;
+      let entries: fs.Dirent[] = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch (_) {
+        continue;
+      }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          stack.push(full);
+        } else if (matcher.test(e.name)) {
+          const mtime = fs.statSync(full).mtimeMs;
+          if (mtime > newestMtime) {
+            newestMtime = mtime;
+            newest = full;
+          }
+        }
+      }
+    }
+    return newest;
+  } catch (_) {
+    return '';
+  }
+}
+
+function dumpFailureContext(
+  stepDesc: string,
+  action: string,
+  opts: SmartActionOptions,
+  err: any,
+  primary?: Locator
+) {
   try {
     const resultsDir = path.join(process.cwd(), 'test-results');
     if (!fs.existsSync(resultsDir)) {
       fs.mkdirSync(resultsDir, { recursive: true });
     }
+    const root = primary ? getRootFrom(primary, opts.frame) : (opts.frame || null);
+    const stepName = (stepDesc || '').replace(/^"|"$/g, '') || (opts.name || '');
+    const tracePath = findLatestArtifact(resultsDir, /trace\.zip$/i);
+    const screenshotPath = findLatestArtifact(resultsDir, /\.(png|jpe?g)$/i);
     const payload = {
       timestamp: new Date().toISOString(),
       step: stepDesc,
+      stepName,
       action,
       name: opts.name || '',
       role: opts.role || '',
       nearText: opts.nearText || '',
+      selectorTried: safeSelector(primary),
+      frameUrl: resolveFrameUrl(root as any),
+      tracePath,
+      screenshotPath,
+      testResultsDir: resultsDir,
       error: err ? (err.message || String(err)) : 'Unknown error',
     };
     fs.writeFileSync(path.join(resultsDir, 'last-failure-context.json'), JSON.stringify(payload, null, 2), 'utf-8');
@@ -207,7 +283,7 @@ export async function smartClick(primary: Locator, opts: SmartActionOptions = {}
     }
     if (!root) {
       console.error(`\x1b[31m[SMART-FAIL]\x1b[0m No root context for: ${stepDesc}`);
-      dumpFailureContext(stepDesc, 'click', opts, primaryErr);
+      dumpFailureContext(stepDesc, 'click', opts, primaryErr, primary);
       throw primaryErr;
     }
 
@@ -258,7 +334,7 @@ export async function smartClick(primary: Locator, opts: SmartActionOptions = {}
       return;
     }
     console.error(`\x1b[31m[SMART-FAIL]\x1b[0m Tất cả fallback thất bại: ${stepDesc}`);
-    dumpFailureContext(stepDesc, 'click', opts, primaryErr);
+    dumpFailureContext(stepDesc, 'click', opts, primaryErr, primary);
     throw primaryErr;
   }
 }
@@ -268,8 +344,7 @@ export async function smartFill(primary: Locator, value: string, opts: SmartActi
   const fastTimeout = opts.fastTimeout ?? FAST_TIMEOUT_MS;
   const root = getRootFrom(primary, opts.frame);
   if (root) {
-    await (root as any).locator('.ajax-status-position:visible, [id*="ajax-indicator"]:visible').first()
-      .waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    await pfWaitAjaxIdle(root as any, 5000);
   }
   try {
     await primary.waitFor({ state: 'visible', timeout: fastTimeout }).catch(() => {});
@@ -283,7 +358,7 @@ export async function smartFill(primary: Locator, value: string, opts: SmartActi
     console.warn(`${WARN_PREFIX} smartFill timeout: ${stepDesc}. Kích hoạt Self-Healing...`);
     const root = getRootFrom(primary, opts.frame);
     if (!root) {
-      dumpFailureContext(stepDesc, 'fill', opts, primaryErr);
+      dumpFailureContext(stepDesc, 'fill', opts, primaryErr, primary);
       throw primaryErr;
     }
     const fallbacks = buildFallbackLocators(root, { ...opts, role: opts.role ?? 'textbox' });
@@ -298,7 +373,7 @@ export async function smartFill(primary: Locator, value: string, opts: SmartActi
       } catch (_) {}
     }
     console.error(`\x1b[31m[SMART-FAIL]\x1b[0m smartFill thất bại hoàn toàn: ${stepDesc}`);
-    dumpFailureContext(stepDesc, 'fill', opts, primaryErr);
+    dumpFailureContext(stepDesc, 'fill', opts, primaryErr, primary);
     throw primaryErr;
   }
 }
@@ -312,3 +387,17 @@ export async function smartPress(primary: Locator, key: string, opts: SmartActio
     console.warn(`${WARN_PREFIX} smartPress "${key}" trên ${stepDesc} fail — bỏ qua (non-critical).`);
   }
 }
+
+/**
+ * 🔁 Re-export thư viện PrimeFaces resilient (Tầng 1) để POM có thể dùng chung một
+ * điểm import. Đây là bổ sung ADDITIVE — không thay đổi bất kỳ chữ ký sẵn có nào của
+ * `smart-action`, đảm bảo Zero Breaking Change cho flow `npm run test:function`.
+ */
+export {
+  waitAjaxIdle,
+  selectOneMenu,
+  selectCheckboxMenu,
+  radio as selectRadio,
+  checkbox as selectCheckbox,
+  dismissOpenPanels,
+} from './primefaces';

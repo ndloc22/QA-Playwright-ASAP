@@ -16,6 +16,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
+const { runCli } = require('./lib/cli-runner');
 const dotenv = require('dotenv');
 const { chromium } = require('@playwright/test');
 
@@ -183,52 +184,55 @@ async function invokeAgentCli(promptText, activeCli, config, logFile) {
   let success = false;
   let usedCli = activeCli;
 
-  function runOneCli(cliName) {
+  // Gọi binary TRỰC TIẾP (không shell) qua cli-runner: tránh shim cmd.exe treo với
+  // "Terminate batch job (Y/N)?", có timeout mềm (kill cả cây tiến trình) và stream log
+  // an toàn theo thời gian thực.
+  async function runOneCli(cliName) {
     console.log(`  \x1b[35m[AI CALL]\x1b[0m Đang kết nối tới ${cliName.toUpperCase()} CLI...`);
-    let proc;
-    // Trên Windows các CLI này là shim .cmd/.bat. Nếu spawnSync hết timeout và gửi
-    // SIGTERM mặc định, cmd.exe sẽ hỏi "Terminate batch job (Y/N)?" và TREO (không ai
-    // trả lời được vì stdin đã dùng cho prompt). => Dùng killSignal:'SIGKILL' để buộc
-    // TerminateProcess ngay lập tức (không hiện prompt), kèm windowsHide + maxBuffer.
-    const commonOpts = {
-      input: promptText,
-      cwd: ROOT_DIR,
-      encoding: 'utf8',
-      shell: true,
-      env: process.env,
-      timeout: config.timeoutMs,
-      killSignal: 'SIGKILL',
-      windowsHide: true,
-      maxBuffer: 32 * 1024 * 1024,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    };
+    const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+    logStream.write(`\n=== ${cliName.toUpperCase()} STREAM (${new Date().toISOString()}) ===\n`);
+
+    let binary;
+    let args;
     if (cliName === 'copilot') {
       const model = config.copilot?.model || 'claude-opus-4.8';
-      // Truyền prompt qua stdin (pipe) thay vì `-p <promptText>` để tránh lỗi
-      // command format trên Windows (prompt dài / có ký tự đặc biệt làm vỡ lệnh).
-      proc = spawnSync('copilot', ['--model', model, '--allow-all'], commonOpts);
+      binary = 'copilot';
+      args = ['--model', model, '--allow-all'];
     } else {
-      proc = spawnSync('claude', ['--print', '--dangerously-skip-permissions'], commonOpts);
+      binary = 'claude';
+      args = ['--print', '--dangerously-skip-permissions'];
     }
 
-    // Loại bỏ nhiễu prompt tương tác của cmd.exe (nếu lỡ lọt vào output) để không
-    // phá bước parse JSON hành động.
-    const clean = (s) =>
-      String(s || '').replace(/Terminate batch job \(Y\/N\)\?\s*/gi, '');
-    const resOut = clean(proc.stdout) + '\n' + clean(proc.stderr);
+    const res = await runCli(binary, args, {
+      input: promptText,
+      cwd: ROOT_DIR,
+      env: process.env,
+      timeoutMs: config.timeoutMs,
+      logStream,
+    });
+    try { logStream.end(); } catch (_) {}
+
+    const resOut = (res.stdout || '') + '\n' + (res.stderr || '');
     const isQuota = /exceeded your monthly quota|rate limit/i.test(resOut);
-    const isOk = !proc.error && proc.status === 0 && !isQuota;
+    const notFound = !!res.error && /không tìm thấy binary/i.test(res.error.message || '');
+    if (notFound) {
+      console.warn(`  \x1b[33m⚠️ Không tìm thấy binary "${binary}" trong PATH.\x1b[0m`);
+    }
+    if (res.timedOut) {
+      console.warn(`  \x1b[33m⚠️ ${cliName.toUpperCase()} CLI timeout sau ${config.timeoutMs}ms — đã kill tiến trình.\x1b[0m`);
+    }
+    const isOk = !res.error && res.status === 0 && !isQuota;
     return { isOk, isQuota, resOut };
   }
 
-  const firstAttempt = runOneCli(activeCli);
+  const firstAttempt = await runOneCli(activeCli);
   output += `=== ${activeCli.toUpperCase()} OUTPUT ===\n` + firstAttempt.resOut;
   success = firstAttempt.isOk;
 
   if (!success && config.autoFallback) {
     const fallbackCli = activeCli === 'copilot' ? 'claude' : 'copilot';
     console.warn(`  \x1b[33m⚠️ ${activeCli.toUpperCase()} không khả dụng hoặc hết quota. Tự động chuyển tiếp sang ${fallbackCli.toUpperCase()} CLI...\x1b[0m`);
-    const fallbackAttempt = runOneCli(fallbackCli);
+    const fallbackAttempt = await runOneCli(fallbackCli);
     output += `\n=== FALLBACK ${fallbackCli.toUpperCase()} OUTPUT ===\n` + fallbackAttempt.resOut;
     success = fallbackAttempt.isOk;
     usedCli = fallbackCli;

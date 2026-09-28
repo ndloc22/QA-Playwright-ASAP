@@ -1,0 +1,220 @@
+generatedAt: '2026-09-25T11:38:05.611Z'
+origin: reverse-grounding
+description: >-
+  Live-grounded UI components reverse-extracted from Playwright codegen recordings (tests/recordings/<KEY>.recording.ts)
+  by scripts/sync-specs.js. Highest-priority grounding source: these selectors were exercised on the REAL app, so prefer
+  them over the static ui_components.yaml when they overlap.
+recordingCount: 1
+componentCount: 30
+recordings:
+  - key: CREATE_RISK_REQUEST
+    recording: tests/recordings/functions/CREATE_RISK_REQUEST.recording.ts
+    entryUrl: https://bpm-qa.eon.com/dev_cybersec12/EON_LDAP/CyberSec
+    syncedAt: '2026-09-25T11:38:05.610Z'
+    componentCount: 30
+    components:
+      - locatorType: css
+        css: iframe[name="custom-widget-iframe-4"]
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: menuitem
+        name: Start Process
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: iframe[title="Task frame"]
+        actions:
+          - click
+          - fill
+          - press
+          - dblclick
+        sampleValues:
+          - T
+          - ArrowLeft
+          - IT
+          - ArrowRight
+          - ITS
+          - vnchap22
+          - '22'
+          - '33'
+          - '2'
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: '[id="riskDescriptionForm:applicationDefined"] > div:nth-child(2) > .ui-radiobutton'
+        primefacesId: riskDescriptionForm:applicationDefined
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: textbox
+        name: Application name
+        actions:
+          - click
+          - fill
+          - press
+        sampleValues:
+          - T
+          - ArrowLeft
+          - IT
+          - ArrowRight
+          - ITS
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: button
+        name: Find application
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: gridcell
+        name: Abwesenheitsplaner envia TEL
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: gridcell
+        name: OK
+        exact: true
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: textbox
+        name: Risk Title
+        actions:
+          - click
+          - fill
+        sampleValues:
+          - vnchap22
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: textbox
+        name: Risk Description
+        actions:
+          - click
+          - fill
+        sampleValues:
+          - '22'
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: textbox
+        name: Risk Consequence
+        actions:
+          - click
+          - fill
+        sampleValues:
+          - '33'
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: .ui-chkbox-box.ui-widget.ui-corner-all.ui-state-default.ui-state-hover
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: div:nth-child(5) > a
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: .ui-selectonemenu-trigger.ui-state-default.ui-corner-right.ui-state-hover
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: option
+        name: Network and programming skills
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: option
+        name: Practically impossible
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: .ui-selectonemenu-trigger.ui-state-default.ui-corner-right.ui-state-hover > .ui-icon
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: option
+        name: Expensive resources required
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: option
+        name: Hidden
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: option
+        name: Developer or system
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: option
+        name: Active detection
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: option
+        name: Essentialy
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: textbox
+        name: What existing measures are
+        actions:
+          - click
+          - fill
+        sampleValues:
+          - '2'
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: role
+        role: button
+        name: Next
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: '[id="riskTreatmentForm:riskTreatmentTabView:0:riskCategoryTag"] > .ui-selectcheckboxmenu-trigger > .ui-icon'
+        primefacesId: riskTreatmentForm:riskTreatmentTabView:0:riskCategoryTag
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: '[id="riskTreatmentForm:riskTreatmentTabView:0:riskCategoryTag_panel"]'
+        primefacesId: riskTreatmentForm:riskTreatmentTabView:0:riskCategoryTag_panel
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: text
+        text: Eavesdropping
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: div
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: css
+        css: '[id="riskTreatmentForm:riskTreatmentTabView:0:localSecurityBox"] > .ui-selectcheckboxmenu-trigger > .ui-icon'
+        primefacesId: riskTreatmentForm:riskTreatmentTabView:0:localSecurityBox
+        actions:
+          - click
+        origin: live_recording_CREATE_RISK_REQUEST
+      - locatorType: text
+        text: Please select control(s)
+        actions:
+          - dblclick
+        origin: live_recording_CREATE_RISK_REQUEST

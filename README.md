@@ -29,6 +29,63 @@ npm run login
 
 ---
 
+## 🎬 Luồng chuẩn: Record-First (Grounding-First) — `npm run qa <KEY>`
+
+> **Triết lý:** *"Record cái máy không biết (DOM thật), giao cho AI cái máy giỏi (thiết kế test-matrix nghiệp vụ)."*
+>
+> AI **không thể suy ra selector kỹ thuật một cách tin cậy từ chữ nghiệp vụ** — đó là gốc rễ của bệnh "test fail liên tục". Record-First đảo ngược bài toán: **Tester thao tác thật ~1 phút** để có selector chuẩn DOM PrimeFaces, sau đó **AI chỉ còn việc thiết kế ca kiểm thử** trên selector đã đúng → **First-Time Green**.
+
+### ✅ Cách dùng — chỉ cần nhớ 1 lệnh
+
+```bash
+# 🟢 Luồng 1-click all-in-one (tự fetch ticket nếu chưa có):
+npm run qa SEC-11359
+
+# 🟢 Luồng chuẩn 2 bước (khi muốn tách riêng bước lấy story):
+npm run fetch-ticket -- SEC-11359     # 1. Lấy story từ Jira → docs/tickets/SEC-11359.md
+npm run qa SEC-11359                  # 2. Chạy toàn bộ pipeline Record-First
+```
+
+### 🔄 8 bước wizard tự điều phối
+
+| Bước | Việc | Token |
+|:-:|:---|:-:|
+| **1** | 📥 **Ingest** story từ Jira (tự fetch nếu chưa có, tái dùng nếu đã có) | 🟢 0 |
+| **2** | 🧾 **Summarize** story (nén ảnh/comment/AC) | 🔵 sonnet |
+| **3** | 🔎 **Blocker Gate** — nếu story mâu thuẫn/thiếu → **dừng ngay**, xuất Bảng Câu Hỏi gửi PO/BA (**exit 2**), *không phí công record* | 🔵 opus |
+| **4** | 🌐 **Kiểm tra feature LIVE?** — nếu chưa deploy → tự chuyển **AI-draft** (bọc `test.fixme`) | 🟢 0 |
+| **5** | 🎬 **Record** Happy Path (Tester thao tác thật ~1 phút, có PrimeFaces Capture Bridge) | 🟢 0 |
+| **6** | 🔧 **sync-specs** → sinh **Page Object** + reverse-ground selector vào `live_grounded_components.yaml` | 🟢 0 |
+| **7** | 🤖 **AI Test Matrix** (`/new-test`) nạp Story + Page Object → TC-01 Happy / TC-02 Validation / TC-03 Boundary... **bắt buộc tái dùng POM, cấm đoán selector** | 🔵 opus |
+| **8** | ▶️ **Chạy Playwright** — nếu fail → tự kích hoạt `ai-healer.js` (có guardrail `tsc` + auto-revert) | 🟢 0 |
+
+### 🧪 Xử lý Validation / Negative test (rất quan trọng)
+
+Recording Happy Path **không render** màn báo lỗi → AI dùng **3 tầng fallback** để lấy locator lỗi (**không bao giờ bịa**):
+
+1. **Record thêm 1 lượt ngắn:** sau Happy Path, cố tình **bỏ trống field bắt buộc rồi bấm Submit 1 lần** → recorder bắt trúng container lỗi PrimeFaces (`p-message` / `.ui-message-error`). *(Wizard sẽ nhắc bạn ở Bước 5.)*
+2. **Suy ra từ OpenSpecs:** nếu không record ca lỗi → AI tra `ui_components.yaml` lấy field `required` + container lỗi chuẩn đã biết.
+3. **Đánh dấu `// ⚠️ CHƯA GROUNDED`:** nếu vẫn không có → vẫn sinh TC nhưng đánh dấu để Tester chốt selector (`/ground-page`), **không tạo test đỏ giả/xanh giả**.
+
+> **Boundary (TC-03)** dùng **lại chính field** của Happy Path (đã có trong POM) → chỉ đổi test data.
+
+### 🎛️ Các cờ tiện ích cho `npm run qa`
+
+| Cờ / Flag | Tác dụng |
+|:---|:---|
+| `--skip-fetch` | Bỏ qua fetch Jira, dùng `docs/tickets/<KEY>.md` sẵn có |
+| `--force-fetch` | Ép fetch lại từ Jira dù `.md` đã tồn tại |
+| `--skip-record` | Bỏ qua record, dùng recording/POM/grounding sẵn có |
+| `--force-record` | Ép record lại dù đã có recording |
+| `--headed` | Chạy Playwright verify ở chế độ hiển thị |
+| `--ci` | Chế độ pipeline không tương tác (không mở recorder, không hỏi) |
+| `--draft` | Ép AI-draft mode (bọc `test.fixme`, không record) |
+| `--sonnet` / `--model <name>` | Đổi model cho Bước 3/7 |
+
+> ℹ️ `npm run ticket <KEY>` giờ là **alias** của `npm run qa <KEY>` (tương thích ngược).
+
+---
+
 ## 🚀 3 Chế độ chạy kiểm thử chính / 3 Core Test Modes
 
 | # | Lệnh / Command | Tên gọi | Token | Trình duyệt | Dùng khi nào |
@@ -69,7 +126,8 @@ npm run heal CREATE_RISK_REQUEST -- --max-rounds=2 --cli=claude
 | Lệnh / Command | Mô tả |
 |:---|:---|
 | `npm run record:function <KEY>` | Record 1 business function tái sử dụng → tự sinh POM + Spec → tự verify |
-| `npm run ticket <KEY>` | Pipeline trọn gói theo vé Jira: Fetch → Record → Sync → Test → Report |
+| `npm run qa <KEY>` | 🎬 **Record-First pipeline trọn gói:** Fetch → Summarize → Blocker Gate → Record → Sync → AI Matrix → Test → Heal |
+| `npm run record:ticket <KEY>` | Chỉ record 1 vé Jira (bước 5 độc lập của `qa`) |
 
 ### 🎯 PrimeFaces Capture Bridge (Layer 2)
 Trình record tích hợp sẵn **Capture Bridge**, bắt trọn **100%** các thao tác PrimeFaces mà Codegen thường bỏ sót:
@@ -81,9 +139,10 @@ Trình record tích hợp sẵn **Capture Bridge**, bắt trọn **100%** các t
 npm run record:function CREATE_RISK_REQUEST
 # → Tester thao tác trên browser → đóng lại → tự sinh POM + Spec + verify PASS/FAIL
 
-npm run ticket SEC-11359
-npm run ticket SEC-11359 -- --skip-record    # dùng recording sẵn có
-npm run ticket SEC-11359 -- --headless       # verify chạy ẩn
+npm run qa SEC-11359
+npm run qa SEC-11359 -- --skip-record    # dùng recording sẵn có
+npm run qa SEC-11359 -- --headed         # verify hiển thị trình duyệt
+npm run qa SEC-11359 -- --ci             # pipeline không tương tác
 ```
 
 ---
@@ -130,7 +189,9 @@ Sau khi record, kịch bản gốc được lưu thành file Markdown dễ đọ
 | `npm run login` | Lưu session đăng nhập → `.auth/user.json` |
 | `npm run login:refresh` | Xóa session cũ + đăng nhập lại |
 | `npm run record:function <KEY>` | 🎬 Record function + auto POM/Spec + auto verify |
-| `npm run ticket <KEY>` | 🎫 Pipeline Jira trọn gói (Fetch→Record→Sync→Test) |
+| `npm run qa <KEY>` | 🎬 **Record-First pipeline** (Fetch→Summarize→Blocker Gate→Record→Sync→AI Matrix→Test→Heal) |
+| `npm run fetch-ticket -- <KEY>` | 📥 Lấy story Jira → `docs/tickets/<KEY>.md` (bước 1 của `qa`) |
+| `npm run ticket <KEY>` | 🎫 Alias tương thích ngược của `npm run qa` |
 | `npm run md-to-spec <KEY>` | ✍️ **Biên dịch .md thành Spec** (0 token, 0.2s, 0 AI) |
 | `npm run test:function <KEY>` | 🧩 **Mode 1** — Native Deterministic (0 token) |
 | `npm run test:agent <KEY>` | 🤖 **Mode 2** — Autonomous AI Agent |
@@ -139,7 +200,6 @@ Sau khi record, kịch bản gốc được lưu thành file Markdown dễ đọ
 | `npm run test:smoke` | Alias của `test:post-deploy` |
 | `npm run clean:testcase` | 🧹 Reset testcase + backup an toàn |
 | `npm run clean` | Xóa report & test-results |
-| `npm run fetch-ticket <KEY>` | Lấy nội dung vé Jira → `docs/tickets/` |
 | `npm run create-subtask <KEY>` | Tạo Jira test sub-task qua REST (0 token) |
 | `npm run sync-specs <KEY>` | Sinh POM + Spec từ recording sẵn có |
 | `npm run test:ui` · `test:debug` · `report` | Playwright UI mode / debug / mở HTML report |
@@ -190,8 +250,9 @@ QA-Playwright-ASAP/
 │   ├── specs/codebase/            # Grounded components (YAML)
 │   └── tickets/                   # Vé Jira đã fetch (<KEY>.md)
 ├── scripts/
-│   ├── ticket-pipeline.js         # 🎫 1-command Jira pipeline
-│   ├── record-ticket.js           # 🎬 Codegen + PrimeFaces Capture Bridge
+│   ├── qa.js                      # 🎬 Record-First wizard (orchestrator 8 bước)
+│   ├── ticket-pipeline.js         # 🎫 (Legacy) pipeline — `ticket` nay trỏ về qa.js
+│   ├── record-ticket.js           # 🎬 Codegen + PrimeFaces Capture Bridge (bước 5)
 │   ├── run-function.js            # 🧩 Mode 1 — Native Deterministic
 │   ├── run-agent.js               # 🤖 Mode 2 — Autonomous AI Agent
 │   ├── ai-healer.js               # 🩹 Mode 3 — Offline Self-Healing
@@ -216,8 +277,12 @@ QA-Playwright-ASAP/
 - **Reverse-Grounding:** `sync-specs` trích selector thật vào `live_grounded_components.yaml` → các vé sau tự tái sử dụng selector đã verify.
 
 ```
-Record ──► Sync (POM+Spec) ──► Run (Mode 1/2) ──► FAIL? ──► Heal (Mode 3) ──► PASS ✅
+Fetch ─► Summarize ─► Blocker Gate ─► Record ─► Sync (POM) ─► AI Matrix ─► Run ─► FAIL? ─► Heal ─► PASS ✅
+                          │
+                          └─ 🔴 Blocker → dừng, xuất Bảng Câu Hỏi (exit 2), không phí công record
 ```
+
+> 🎬 Tất cả gói trong **một lệnh: `npm run qa <KEY>`** — zero-memory cho Tester, mặc định thông minh, dừng sớm khi Blocker.
 
 ---
 

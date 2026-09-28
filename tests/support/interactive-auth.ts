@@ -103,7 +103,9 @@ async function waitForReturnToApp(
           .catch(() => false);
         if (ok) return;
       } else {
-        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
+        // Chờ DOM tải xong và đợi trang ổn định (BPM QA server phản hồi có thể mất 30-40s)
+        await page.waitForLoadState('domcontentloaded', { timeout: 45000 }).catch(() => undefined);
+        await page.locator('.portal-page-body, .dashboard-custom-iframe, [id*="PortalDashboard"], body').first().waitFor({ state: 'attached', timeout: 45000 }).catch(() => undefined);
         return;
       }
     }
@@ -148,9 +150,13 @@ export async function ensureInteractiveAuth(
   const saveState = options.saveState !== false;
   const baseHost = hostOf(baseUrl);
 
-  await page.goto(baseUrl).catch(() => undefined);
-  // Cho các redirect client-side kịp chạy (Ivy portal + Azure AD).
-  await page.waitForTimeout(1500);
+  const currentUrl = page.url();
+  const alreadyOnApp = currentUrl && !currentUrl.startsWith('about:blank') && currentUrl.includes('CyberSec');
+  if (!alreadyOnApp) {
+    await page.goto(baseUrl).catch(() => undefined);
+    // Cho các redirect client-side kịp chạy (Ivy portal + Azure AD).
+    await page.waitForTimeout(1000);
+  }
 
   if (options.readyLocator) {
     const already = await options.readyLocator.isVisible().catch(() => false);
@@ -161,6 +167,8 @@ export async function ensureInteractiveAuth(
 
   if (!(await isOnLoginScreen(page))) {
     // Không thấy màn hình login → coi như đã authenticated (storageState còn hạn).
+    await page.waitForLoadState('domcontentloaded', { timeout: 45000 }).catch(() => undefined);
+    await page.locator('.portal-page-body, .dashboard-custom-iframe, [id*="PortalDashboard"], body').first().waitFor({ state: 'attached', timeout: 45000 }).catch(() => undefined);
     if (options.readyLocator) {
       await options.readyLocator
         .waitFor({ state: 'visible', timeout: 10000 })

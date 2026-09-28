@@ -1,0 +1,18 @@
+{
+  "defaultCli": "copilot",
+  "autoFallback": true,
+  "timeoutMs": 60000,
+  "copilot": {
+    "model": "claude-opus-4.8",
+    "flags": [
+      "--allow-all"
+    ]
+  },
+  "claude": {
+    "flags": [
+      "--print",
+      "--dangerously-skip-permissions"
+    ]
+  },
+  "logDir": "logs/agent-runs"
+}

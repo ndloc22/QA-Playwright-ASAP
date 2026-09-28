@@ -67,7 +67,7 @@ export default defineConfig({
    * - Normal runs: 30 s is enough for automated steps.
    * - INTERACTIVE_SSO=1: 3 min so the tester can receive and approve the MFA prompt.
    */
-  timeout: INTERACTIVE_SSO ? 3 * 60 * 1000 : 30 * 1000,
+  timeout: INTERACTIVE_SSO ? 3 * 60 * 1000 : 120 * 1000,
   expect: {
     timeout: 5000,
   },

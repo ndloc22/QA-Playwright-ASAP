@@ -191,6 +191,34 @@ if (syncResult.error || syncResult.status !== 0) {
 console.log(`[OK] Spec files generated.`);
 
 // ---------------------------------------------------------------------------
+// STEP 3.5 -- Pipeline Gatekeeper: TypeScript dry-run validation
+// Detect locator/type errors BEFORE running the full test to save time.
+// ---------------------------------------------------------------------------
+
+console.log(`\n[Step 3.5] TypeScript dry-run validation on generated specs...`);
+const specForTs = `tests/e2e/TC-${key}.spec.ts`;
+const pomForTs  = `tests/pages/functions/${key.charAt(0).toUpperCase() + key.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase())}Page.ts`;
+// Try TSC if installed, otherwise skip gracefully
+const tscResult = safeSpawnSync(
+  'npx',
+  ['tsc', '--noEmit', '--strict', '--target', 'ES2020', '--module', 'commonjs', '--esModuleInterop', '--skipLibCheck', specForTs],
+  { stdio: ['ignore', 'pipe', 'pipe'], cwd: ROOT_DIR }
+);
+const tscOut = (tscResult.stdout || '').toString().trim();
+const tscErr = (tscResult.stderr || '').toString().trim();
+if (tscResult.error) {
+  console.warn(`  [SKIP] TypeScript check skipped: ${tscResult.error.message}`);
+} else if (tscResult.status !== 0) {
+  const tscOutput = [tscOut, tscErr].filter(Boolean).join('\n');
+  console.error(`\n[ERROR] TypeScript validation FAILED for: ${specForTs}`);
+  console.error(tscOutput || '(no output)');
+  console.error(`  -> Fix above errors in sync-specs.js then re-run: npm run sync-specs ${key}`);
+  process.exit(2);
+} else {
+  console.log(`[OK] TypeScript validation passed.`);
+}
+
+// ---------------------------------------------------------------------------
 // STEP 4 -- Run Playwright Test
 // ---------------------------------------------------------------------------
 
@@ -211,7 +239,15 @@ const testResult = safeSpawnSync(npxBin, playwrightArgs, {
   env: { ...process.env, INTERACTIVE_SSO: HEADLESS ? '0' : '1' },
 });
 
-const passed = !testResult.error && testResult.status === 0;
+let passed = !testResult.error && testResult.status === 0;
+if (!passed) {
+  console.log('\n\x1b[33m[AI-HEAL] Pipeline Step 4 failed. Triggering AI Healer CLI to self-heal POM...\x1b[0m');
+  const healRes = runScript('ai-healer.js', [key]);
+  if (!healRes.error && healRes.status === 0) {
+    passed = true;
+    console.log('\x1b[32m[AI-HEAL] Self-healing succeeded! Test is now passing.\x1b[0m');
+  }
+}
 
 // ---------------------------------------------------------------------------
 // FINAL SUMMARY

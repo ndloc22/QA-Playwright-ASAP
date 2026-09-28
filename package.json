@@ -1,6 +1,6 @@
-﻿{
+{
     "name": "qa-playwright-asap",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Playwright Automation & 1-Click Workflow for ASAP QA Testers powered by GitHub Copilot",
     "scripts": {
         "login": "node scripts/login.js",

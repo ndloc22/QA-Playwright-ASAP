@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PrimeFaces Capture Bridge (Layer 2):** Automated recording bridge capturing detached/hidden PrimeFaces components (`p:selectOneMenu`, radio buttons, checkboxes) into semantic Playwright locators.
 - **Hybrid AI Self-Healing (`scripts/ai-healer.js`):** Resilient offline and agent recovery with `tsc --noEmit` baseline verification and automatic rollback.
 - **Reverse-Grounding Engine:** Automatically extracts live recorded selectors into `docs/specs/codebase/live_grounded_components.yaml` for cross-ticket knowledge reuse.
-- **Full-featured Documentation:** Comprehensive guides in `README.md`, `docs/COPILOT_ANALYSIS_RECORD_FIRST.md`, and `docs/COPILOT_REVIEW_QUY_TRINH_TEST.md`.
+- **Full-featured Documentation:** Comprehensive guides in `README.md`, `docs/analysis/COPILOT_ANALYSIS_RECORD_FIRST.md`, and `docs/analysis/COPILOT_REVIEW_QUY_TRINH_TEST.md`.
 
 ### Changed
 - Prompts `new-test.prompt.md` and `record-ticket.prompt.md` updated to strictly mandate Page Object reuse and include 3-tier fallback for validation testing.

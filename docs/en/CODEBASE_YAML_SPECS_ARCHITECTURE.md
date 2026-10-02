@@ -437,6 +437,6 @@ This is the shift from *"AI re-reads raw source every time"* to *"static preproc
 
 - [`docs/en/README.md`](./README.md) — 3-step Quick Start (English).
 - [`docs/en/ADVANCED-GUIDE.md`](./ADVANCED-GUIDE.md) — advanced mechanics (English).
-- [`docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md`](../QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md) — token-optimization plan.
+- [`docs/plans/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md`](../plans/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md) — token-optimization plan.
 - [`scripts/generate-codebase-specs.js`](../../scripts/generate-codebase-specs.js) — the extractor.
 - 🇻🇳 Vietnamese version: [`docs/plans/CODEBASE_YAML_SPECS_ARCHITECTURE.md`](../plans/CODEBASE_YAML_SPECS_ARCHITECTURE.md)

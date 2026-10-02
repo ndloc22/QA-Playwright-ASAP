@@ -245,9 +245,13 @@ QA-Playwright-ASAP/
 │   ├── agent.json                 # Cấu hình AI Agent (Mode agent & heal)
 │   └── post-deploy-smoke.json     # Chuỗi function cho smoke test
 ├── docs/
-│   ├── tickets/                   # Vé Jira đã fetch (<KEY>.md)
-│   ├── tester-prompts/            # Prompt cho record:agent (<KEY>.prompt.md)
-│   └── specs/codebase/            # Grounded components (YAML)
+│   ├── guides/                    # 📖 Hướng dẫn chuyên sâu (Advanced guide, Agent runner...)
+│   ├── plans/                     # 📐 Kiến trúc & Kế hoạch kỹ thuật
+│   ├── analysis/                  # 🔬 Báo cáo phân tích chuyên sâu & Root Cause
+│   ├── tester-prompts/            # 🤖 Prompt cho record:agent (<KEY>.prompt.md)
+│   ├── tickets/                   # 🎫 Vé Jira đã fetch (<KEY>.md)
+│   ├── specs/codebase/            # 🧱 Grounded components & State Machine (YAML)
+│   └── en/                        # 🌐 Tài liệu tiếng Anh
 ├── scripts/
 │   ├── login.js                   # 🔐 Đăng nhập + chuyển môi trường + sync .env
 │   ├── record-ticket.js           # 🎬 Luồng 1 — Codegen + PrimeFaces Capture Bridge

@@ -13,7 +13,7 @@
 
 > 💡 An E2E test-automation project tailored for the **ASAP** team. The default ticket format is `ASAP-<ID>` (e.g. `ASAP-101`); point `BASE_URL` at the ASAP test server and you are ready to go.
 
-> 🌐 This is the **English** version. 🇻🇳 Vietnamese original: [`../README.md`](../README.md).
+> 🌐 This is the **English** version. 🇻🇳 Vietnamese original: [`../../README.md`](../../README.md).
 
 ---
 
@@ -224,8 +224,12 @@ QA-Playwright-ASAP/
 │   ├── specs/              # Business OpenSpecs: index/process/roles/fields.yaml (template)
 │   │   └── codebase/       # Extracted from source: ui_components, state_machine, live_grounded_components
 │   ├── tickets/            # Extracted tickets (<KEY>.md + images/diagrams) — generated at runtime
-│   ├── en/                 # 🌐 English documentation (this folder)
-│   └── ADVANCED-GUIDE.md   # Detailed advanced mechanics
+│   ├── guides/             # 📖 In-depth operational guides
+│   ├── plans/              # 📐 Architecture & optimization plans
+│   ├── analysis/           # 🔬 Root cause & Copilot technical reviews
+│   ├── tester-prompts/     # 🤖 Prompts for record:agent
+│   ├── tickets/            # 🎫 Extracted tickets (<KEY>.md)
+│   └── en/                 # 🌐 English documentation (this folder)
 ├── scripts/                # auto-test, fetch-jira, record-ticket, sync-specs, generate-codebase-specs...
 ├── tests/
 │   ├── e2e/                # Playwright specs (TC-<KEY>.spec.ts)
@@ -258,7 +262,7 @@ Advanced mechanics live in **[ADVANCED-GUIDE.md](./ADVANCED-GUIDE.md)** to keep 
 | [`README.md`](./README.md) | This file — English project overview & 3-step workflow |
 | [`ADVANCED-GUIDE.md`](./ADVANCED-GUIDE.md) | End-to-end operational guide for QA engineers & stakeholders |
 | [`CODEBASE_YAML_SPECS_ARCHITECTURE.md`](./CODEBASE_YAML_SPECS_ARCHITECTURE.md) | Client-ready whitepaper: why YAML codebase specs are fast, light & token-efficient |
-| [`../QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md`](../QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md) | Token-optimization plan & 1-click workflow |
+| [`../plans/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md`](../plans/QA_PLAYWRIGHT_OPTIMIZATION_PLAN_EN.md) | Token-optimization plan & 1-click workflow |
 
 ---
 

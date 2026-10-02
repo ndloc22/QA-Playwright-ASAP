@@ -4,7 +4,7 @@
  * A single door for the whole ticket-testing lifecycle. Instead of asking the
  * Tester to remember `auto-test` vs `ticket` vs `record:ticket` + `regenerate`,
  * this wizard runs the unified "Record-First" flow described in
- * docs/COPILOT_ANALYSIS_RECORD_FIRST.md:
+ * docs/analysis/COPILOT_ANALYSIS_RECORD_FIRST.md:
  *
  *   npm run qa <KEY>          # e.g. npm run qa SEC-11359
  *

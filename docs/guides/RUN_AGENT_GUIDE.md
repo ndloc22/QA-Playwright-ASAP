@@ -193,4 +193,4 @@ Log chứa:
 
 **Maintained by**: QA Team  
 **Last updated**: 2026-09-25  
-**Related**: [FIX_SUMMARY.md](./FIX_SUMMARY.md)
+**Related**: [FIX_SUMMARY.md](../analysis/FIX_SUMMARY.md)

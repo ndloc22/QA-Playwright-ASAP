@@ -2,7 +2,7 @@
 
 Detailed reference for the advanced mechanics. The root `README.md` is the short guide (3-step Quick Start); this file holds the technical detail for lookup.
 
-> 🌐 This is the **English** version. 🇻🇳 Vietnamese original: [`../ADVANCED-GUIDE.md`](../ADVANCED-GUIDE.md).
+> 🌐 This is the **English** version. 🇻🇳 Vietnamese original: [`../guides/ADVANCED-GUIDE.md`](../guides/ADVANCED-GUIDE.md).
 
 > This starter kit is **not hard-wired to any business domain**. All examples use the generic ticket key `TICKET-123`; replace it with your real ticket key and point `BASE_URL` at your app.
 

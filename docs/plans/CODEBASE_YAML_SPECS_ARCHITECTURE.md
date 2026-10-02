@@ -436,7 +436,7 @@ Kiến trúc OpenSpecs YAML mang lại đồng thời **3 lợi ích thường m
 ### 🔗 Tài liệu liên quan
 
 - [`README.md`](../README.md) — Quick Start 3 bước.
-- [`docs/ADVANCED-GUIDE.md`](./ADVANCED-GUIDE.md) — cơ chế nâng cao.
+- [`docs/guides/ADVANCED-GUIDE.md`](../guides/ADVANCED-GUIDE.md) — cơ chế nâng cao.
 - [`docs/QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md`](./QA_PLAYWRIGHT_OPTIMIZATION_PLAN.md) — kế hoạch tối ưu token.
 - [`docs/ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md`](./ROOT_CAUSE_ANALYSIS_TESTCASE_VS_PROMPT.md) — vì sao grounding là bắt buộc.
 - [`scripts/generate-codebase-specs.js`](../scripts/generate-codebase-specs.js) — bộ bóc tách.

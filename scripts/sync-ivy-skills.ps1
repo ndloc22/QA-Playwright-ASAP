@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     1-click sync/refresh cho bo Axon Ivy Skills (Tier-1) tu du an nguon kleinfernwirktechnik
     sang QA-Playwright-KFWT-Retrofit\.github\skills (cau truc phang - moi skill 1 thu muc).
@@ -9,7 +9,7 @@
     chua file SKILL.md), roi copy (mirror) toan bo noi dung sang thu muc dich, lam PHANG cau truc
     (bo qua cac lop thu muc phan loai trung gian nhu "ui\skills\...", "process-workflow\skills\...").
 
-    Sau khi dong bo xong, script tu dong cap nhat lai docs/IVY-SKILLS-MANIFEST.md voi ngay gio
+    Sau khi dong bo xong, script tu dong cap nhat lai docs/guides/IVY-SKILLS-MANIFEST.md voi ngay gio
     dong bo va danh sach skill hien co.
 
 .PARAMETER Source
@@ -124,8 +124,8 @@ $okCount = ($syncResults | Where-Object { $_.Status -eq "OK" }).Count
 $totalCount = $syncResults.Count
 Write-Host "Da dong bo thanh cong $okCount / $totalCount skill." -ForegroundColor Green
 
-# --- Cap nhat docs/IVY-SKILLS-MANIFEST.md ---
-$manifestPath = Join-Path $ProjectRoot "docs\IVY-SKILLS-MANIFEST.md"
+# --- Cap nhat docs/guides/IVY-SKILLS-MANIFEST.md ---
+$manifestPath = Join-Path $ProjectRoot "docs\guides\IVY-SKILLS-MANIFEST.md"
 $manifestDir = Split-Path -Parent $manifestPath
 if (-not (Test-Path $manifestDir)) {
     New-Item -ItemType Directory -Path $manifestDir -Force | Out-Null

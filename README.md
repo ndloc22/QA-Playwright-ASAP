@@ -28,7 +28,7 @@
 
 Dự án biến thao tác thủ công của Tester thành bộ test tự động **ổn định, chạy lại 0 token**. Triết lý cốt lõi:
 
-> **Record cái máy không biết (selector DOM thật) — giao AI cái máy giỏi (thiết kế ca kiểm thử).**
+> **Không đoán mò selector: Ghi lại DOM thật từ thao tác — Để AI tự động thiết kế và sinh mã kiểm thử.**
 
 ```
                  ┌─────────────────────────────────────────────┐
@@ -317,6 +317,7 @@ Client không cho tạo PAT → dùng session storage. Chạy `npm run login:jir
 
 <div align="center">
 
-**Quy tắc vàng:** Selector **không bao giờ đoán mò** — Record cái máy không biết, để AI thiết kế ca kiểm thử. 🎭
+**Quy tắc vàng:** Selector **không bao giờ đoán mò** — Bắt đúng DOM thật từ thao tác, để AI tự động thiết kế và sinh mã kiểm thử. 🎭
 
 </div>
+

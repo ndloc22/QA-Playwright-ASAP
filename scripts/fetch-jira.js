@@ -11,6 +11,9 @@ const path = require('path');
 
 const TICKETS_DIR = path.join(__dirname, '..', 'docs', 'tickets');
 const AUTH_DIR = path.join(__dirname, '..', '.auth', 'jira-profile');
+// File luu session (cookies + localStorage) ben vung de lan sau vao thang ticket,
+// KHONG bi Chromium don dep session cookie khi dong browser -> khong bi hoi lai SSO/MFA.
+const AUTH_STATE_FILE = path.join(__dirname, '..', '.auth', 'jira.json');
 
 // Tham so hoa JIRA_BASE_URL de tai su dung script nay cho cac du an khac (ASAP, WAW, ...).
 // Uu tien bien moi truong JIRA_BASE_URL, fallback ve domain E.ON mac dinh.
@@ -43,6 +46,42 @@ function sanitizeFilename(name) {
     .split('#')[0]
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .slice(-120) || 'file';
+}
+
+/**
+ * Luu toan bo session (cookies + localStorage) ra .auth/jira.json.
+ * Goi ngay sau khi vao duoc trang ticket that (authenticated = true) de lan sau
+ * browser context co san session cookie hop le, vao thang ticket khong bi SSO/MFA.
+ */
+async function saveSessionState(browserContext) {
+  try {
+    await browserContext.storageState({ path: AUTH_STATE_FILE });
+    console.log(`[OK] \x1b[32mSession saved:\x1b[0m ${path.relative(process.cwd(), AUTH_STATE_FILE)} (khong can dang nhap lai lan sau)`);
+  } catch (err) {
+    console.warn(`[WARN] Khong luu duoc session state: ${err.message}`);
+  }
+}
+
+/**
+ * Nap lai cookies da luu tu .auth/jira.json vao browser context (dung cho persistent
+ * context vi launchPersistentContext khong ho tro option storageState truc tiep).
+ * Nho vay session cookie song lai -> vao thang ticket, khong bi chuyen huong sang
+ * Microsoft SSO / MFA.
+ */
+async function loadSessionState(browserContext) {
+  if (!fs.existsSync(AUTH_STATE_FILE)) return false;
+  try {
+    const raw = fs.readFileSync(AUTH_STATE_FILE, 'utf8');
+    const state = JSON.parse(raw);
+    if (Array.isArray(state.cookies) && state.cookies.length > 0) {
+      await browserContext.addCookies(state.cookies);
+      console.log(`[OK] Loaded saved session from ${path.relative(process.cwd(), AUTH_STATE_FILE)} (${state.cookies.length} cookies).`);
+      return true;
+    }
+  } catch (err) {
+    console.warn(`[WARN] Khong doc duoc session state (${err.message}), se dang nhap lai.`);
+  }
+  return false;
 }
 
 /**
@@ -200,6 +239,10 @@ async function fetchJiraTicket(target) {
         viewport: { width: 1400, height: 900 }
       });
     }
+
+    // Nap lai session cookie da luu (.auth/jira.json) neu co, de vao thang ticket
+    // ma khong bi chuyen huong sang Microsoft SSO / MFA.
+    await loadSessionState(browserContext);
   }
 
   const page = await browserContext.newPage();
@@ -257,6 +300,9 @@ async function fetchJiraTicket(target) {
     if (!authenticated) {
       throw new Error('Hết thời gian chờ đăng nhập (5 phút) hoặc chưa vào được trang ticket Jira.');
     }
+
+    // Luu session ngay khi vao duoc trang ticket -> lan sau khong bi hoi lai SSO/MFA.
+    await saveSessionState(browserContext);
 
     // Đợi thêm 3s để DOM hydration và REST API sẵn sàng
     console.log('[INFO] Waiting for ticket content to load...');

@@ -686,7 +686,7 @@ function extractPomModel(source) {
     );
     if (!actionMatch) continue;
 
-    const action = actionMatch[1];
+    let action = actionMatch[1];
     // Skip redundant keyboard scroll actions on transient Loading headers
     if (action === 'press' && /Loading\.\.\./.test(line)) continue;
     const rawArg = actionMatch[2];
@@ -697,6 +697,12 @@ function extractPomModel(source) {
     }
 
     const beforeAction = line.slice(0, line.lastIndexOf(actionMatch[0]));
+    // Clean-up rule: dblclick trong recording gần như luôn là cú double-click lạc (PrimeFaces
+    // dropdown re-render, hoặc thao tác tay thừa). Luôn hạ xuống single click để POM/spec
+    // sinh ra "không còn dblclick" — vừa ổn định hơn, vừa khớp luật thực chiến của Tester.
+    if (action === 'dblclick') {
+      action = 'click';
+    }
     const isFrame = beforeAction.includes('.contentFrame()');
     let frameSelector = null;
     let locatorPart = beforeAction.replace(/^await\s+page\./, '');
@@ -921,13 +927,23 @@ function extractPomModel(source) {
     });
   }
 
-  const locators = Array.from(bySig.values());
+  const allLocators = Array.from(bySig.values());
+
+  // 🧹 Selector hygiene: loại bỏ locator rác (click-outside, container layout, :nth-child
+  // positional) khỏi model — kéo theo cả getter/method và step tương ứng không được sinh.
+  const junkMembers = new Set(allLocators.filter(isJunkLocator).map((l) => l.member));
+  const locators = junkMembers.size
+    ? allLocators.filter((l) => !junkMembers.has(l.member))
+    : allLocators;
+  const cleanSteps = junkMembers.size
+    ? recordedSteps.filter((s) => !junkMembers.has(s.member))
+    : recordedSteps;
 
   return {
     frameTitle,
     hasFrame: locators.some((l) => l.isFrame),
     locators,
-    recordedSteps
+    recordedSteps: cleanSteps
   };
 }
 
@@ -984,6 +1000,37 @@ function ratingLocatorExpr(raw) {
   if (!m) return null;
   const n = m[1];
   return ".locator('.ui-rating div:nth-child(" + n + ") > a, div:nth-child(" + n + ") > a').first()";
+}
+
+/**
+ * Selector-hygiene gate: nhận diện locator "rác" sinh ra từ thao tác tay thừa (click ra
+ * nền để đóng dropdown, container layout `div`, selector positional `:nth-child` mong manh).
+ * Những locator này KHÔNG nên trở thành getter/method trong POM/spec.
+ *
+ * Lưu ý: locator đã được "giải nghĩa" (role/label/css có name) luôn được GIỮ — kể cả khi
+ * rawExpr gốc từng chứa `:nth-child` (ví dụ radio Application), vì chúng đã ổn định hoá.
+ * Rating star (`div:nth-child(N) > a`) cũng được giữ vì mang ngữ nghĩa thật.
+ */
+function isJunkLocator(comp) {
+  if (!comp) return false;
+  const raw = comp.rawExpr || '';
+  // Giữ rating star hợp lệ.
+  if (isRatingSelector(raw)) return false;
+  if (comp.css && isRatingSelector(comp.css)) return false;
+  // Chỉ locator raw (chưa giải nghĩa) mới có thể là rác.
+  if (comp.locatorType !== 'raw') return false;
+  // Click ra nền / container layout: locator('div') kèm .nth(N) hoặc .filter(...).
+  if (/locator\(\s*['"]div['"]\s*\)/.test(raw) && (/\.nth\(\s*\d+\s*\)/.test(raw) || /\.filter\(/.test(raw))) {
+    return true;
+  }
+  // Selector positional :nth-child mong manh (không phải rating).
+  if (/:nth-child\(\d+\)/.test(raw)) return true;
+  // Member thuần container layout (divNthN / spanNthN / actionElement / uiG...Element).
+  const member = comp.member || '';
+  if (/^(?:div|span)Nth\d+/i.test(member)) return true;
+  if (/^actionElement$/i.test(member)) return true;
+  if (/^uiG\d*Element$/i.test(member)) return true;
+  return false;
 }
 
 function locatorExpr(comp) {
@@ -1144,7 +1191,9 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   lines.push(`import { ensureInteractiveAuth } from '${supportImport || '../support/interactive-auth'}';`);
   const authImportPath = supportImport || '../support/interactive-auth';
   const smartImportPath = authImportPath.replace('interactive-auth', 'smart-action');
-  lines.push(`import { smartClick, smartFill, smartPress } from '${smartImportPath}';`);
+  lines.push(`import { smartClick, smartFill, smartPress, waitAjaxIdle } from '${smartImportPath}';`);
+  const frameImportPath = authImportPath.replace('interactive-auth', 'frame');
+  lines.push(`import { installDialogAutoAccept, resolveTaskFrameLocator, safeNavigate } from '${frameImportPath}';`);
   lines.push('');
   lines.push('// Credentials come from the environment (.env via playwright.config.ts) so no secret is');
   lines.push('// baked into source. Override per-call by passing arguments to ensureAuthenticated().');
@@ -1176,12 +1225,9 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   for (const l of pageLocators) {
     lines.push(`    this.${l.member} = page${locatorExpr(l)};`);
   }
-  // FIX 3: Emit dialog auto-handler into generated POM constructor
-  lines.push("    // Auto-dismiss browser dialogs (alert, confirm, beforeunload)");
-  lines.push("    this.page.on('dialog', async (dialog) => {");
-  lines.push("      console.log('[Auto-Dialog] ' + dialog.type() + ': ' + dialog.message().slice(0, 120));");
-  lines.push("      await dialog.accept().catch(() => {});");
-  lines.push('    });');
+  // FIX 3: Register global dialog auto-accept (alert / confirm / beforeunload) via shared helper.
+  lines.push("    // Auto-dismiss browser dialogs (alert, confirm, beforeunload) — tester rule as default.");
+  lines.push("    installDialogAutoAccept(this.page);");
   lines.push('  }');
 
   // ── ensureAuthenticated(): resilient to "View Expired" / expired sessions ──
@@ -1218,7 +1264,7 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
     // Robust against the portal's client-side redirect chain: after goto(), the login
     // form is NOT visible immediately. Each attempt waits for the page to SETTLE on
     // either the login form or the entry point (whichever wins the race) before acting.
-    lines.push('    await this.page.goto(baseUrl);');
+    lines.push('    await safeNavigate(this.page, baseUrl);');
     lines.push('    for (let attempt = 0; attempt < 3; attempt++) {');
     lines.push('      await Promise.race([');
     lines.push(
@@ -1246,7 +1292,7 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
     lines.push('    }');
     lines.push(`    await expect(this.${entryMember}).toBeVisible({ timeout: 15000 });`);
   } else {
-    lines.push('    await this.page.goto(baseUrl);');
+    lines.push('    await safeNavigate(this.page, baseUrl);');
     lines.push("    const usernameField = this.page.getByRole('textbox', { name: 'Username' });");
     lines.push('    if (await usernameField.isVisible({ timeout: 5000 }).catch(() => false)) {');
     lines.push('      await usernameField.fill(username);');
@@ -1266,9 +1312,9 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
 
   if (hasFrame && frameTitle) {
     lines.push('');
-    lines.push('  /** FrameLocator for the portal task iframe that hosts this module. */');
+    lines.push('  /** FrameLocator for the business iframe (resolved by URL pattern de.eon.itsp.riskassessment, fallback to Task frame title). */');
     lines.push('  get frame(): FrameLocator {');
-    lines.push(`    return this.page.frameLocator(${tsString(`iframe[title="${frameTitle}"]`)});`);
+    lines.push('    return resolveTaskFrameLocator(this.page);');
     lines.push('  }');
   }
 
@@ -1302,7 +1348,6 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   lines.push('   * Safe to call anytime; resolves immediately if no loader is active.');
   lines.push('   */');
   lines.push('  async waitForAjax(timeout: number = 20000): Promise<void> {');
-  lines.push('    await this.page.waitForTimeout(250).catch(() => {});');
   lines.push('    try {');
   lines.push('      await this.page.waitForFunction(() => {');
   lines.push('        const w = window as any;');
@@ -1311,6 +1356,11 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
   lines.push('        return jqDone && pfDone;');
   lines.push('      }, { timeout: Math.min(timeout, 10000) }).catch(() => {});');
   lines.push('    } catch (_) {}');
+  lines.push('    // Deterministic AJAX-idle wait (no magic sleep): page + business iframe PrimeFaces indicators.');
+  lines.push('    await waitAjaxIdle(this.page, timeout);');
+  if (hasFrame && frameTitle) {
+    lines.push('    await waitAjaxIdle(this.frame, timeout);');
+  }
   lines.push("    const indicator = this.page.locator('.ajax-status-position, [id*=\"ajax-indicator-ajax-indicator\"]').first();");
   lines.push("    await indicator.waitFor({ state: 'hidden', timeout }).catch(() => {});");
   lines.push('  }');
@@ -1430,8 +1480,8 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
       if (action === 'click' && l.frameSelector && /custom-widget-iframe/.test(l.frameSelector)) {
         // FIX 5: 3-layer menu open strategy
         // Playwright Codegen only records the final click, missing hover steps for collapsed menus.
-        lines.push("    // [L1] Skip if Task frame already visible (resumed session)");
-        lines.push("    const _tf = this.page.frameLocator('iframe[title=\"Task frame\"]');");
+        lines.push("    // [L1] Skip if business Task frame already visible (resumed session)");
+        lines.push("    const _tf = resolveTaskFrameLocator(this.page);");
         lines.push("    if (await _tf.locator('body').isVisible({ timeout: 2000 }).catch(() => false)) return;");
         lines.push("    // [L2] Wait for widget iframe + body to be rendered");
         lines.push("    await this.page.locator('iframe[name*=\"custom-widget\"], iframe[src*=\"CustomMenuWidget\"], iframe[title*=\"processes\"]').first().waitFor({ state: 'attached', timeout: 60000 }).catch(() => {});");
@@ -1445,12 +1495,12 @@ function renderPomClass(pageClass, key, recordingRel, model, baseFallback, suppo
         lines.push("      const _sm = _wf.getByRole('menuitem', { name: /^Start/i }).first();");
         lines.push("      if (await _sm.isVisible({ timeout: 5000 }).catch(() => false)) {");
         lines.push("        await _sm.hover({ force: true }).catch(() => {});");
-        lines.push("        await this.page.waitForTimeout(500);");
+        lines.push("        await waitAjaxIdle(this.page, 2000);");
         lines.push("      }");
         lines.push("      const _rs = _wf.getByRole('menuitem', { name: /Risk Assessment/i }).first();");
         lines.push("      if (await _rs.isVisible({ timeout: 3000 }).catch(() => false)) {");
         lines.push("        await _rs.hover({ force: true }).catch(() => {});");
-        lines.push("        await this.page.waitForTimeout(500);");
+        lines.push("        await waitAjaxIdle(this.page, 2000);");
         lines.push("      }");
         lines.push("    }");
         lines.push("    // [L4] Execute click with multiple fallbacks");

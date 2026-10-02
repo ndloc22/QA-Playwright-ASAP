@@ -1,0 +1,14 @@
+{
+  "_comment": "Map alias môi trường -> BASE_URL. Dùng với: npm run login <alias>. Tester có thể sửa/thêm tuỳ ý. Alias không phân biệt hoa thường.",
+  "default": "dev",
+  "environments": {
+    "dev": {
+      "baseUrl": "https://bpm-qa.eon.com/dev_cybersec12/EON_LDAP/CyberSec",
+      "description": "Môi trường DEV CyberSec (mặc định)"
+    },
+    "qa1": {
+      "baseUrl": "https://bpm-qa.eon.com/qa1_cybersec12/EON_LDAP/CyberSec",
+      "description": "Môi trường QA1 CyberSec"
+    }
+  }
+}

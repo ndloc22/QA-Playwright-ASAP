@@ -21,6 +21,7 @@ import { type FrameLocator, type Locator, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { waitAjaxIdle as pfWaitAjaxIdle } from './primefaces';
+import { installDialogAutoAccept } from './frame';
 
 const FAST_TIMEOUT_MS = 7000;
 const HEALED_PREFIX = '\x1b[33m[SELF-HEALED]\x1b[0m';
@@ -185,7 +186,7 @@ async function waitForDialogIfOpen(primary: Locator, opts: SmartActionOptions): 
           await page.keyboard.press('Escape').catch(() => {});
         }
         await openMenuPanels.first().waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
-        if (page) await page.waitForTimeout(200).catch(() => {});
+        await pfWaitAjaxIdle(root as any, 3000);
       }
     }
 
@@ -206,8 +207,7 @@ async function waitForDialogIfOpen(primary: Locator, opts: SmartActionOptions): 
         await dialog.waitFor({ state: 'hidden', timeout: 6000 }).catch(() => {});
         await (root as any).locator('.ui-widget-overlay:visible, .ui-dialog-mask:visible').first().waitFor({ state: 'hidden', timeout: 4000 }).catch(() => {});
         await (root as any).locator('.ajax-status-position, [id*="ajax-indicator-ajax-indicator"]').first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
-        const page = (root as any).page ? (root as any).page() : null;
-        if (page) await page.waitForTimeout(400).catch(() => {});
+        await pfWaitAjaxIdle(root as any, 5000);
       }
     }
   } catch (_) {}
@@ -216,13 +216,7 @@ async function waitForDialogIfOpen(primary: Locator, opts: SmartActionOptions): 
 
 export async function smartClick(primary: Locator, opts: SmartActionOptions = {}): Promise<void> {
   const page = (primary as any).page ? (primary as any).page() : null;
-  if (page && !(page as any)._hasAutoDialogHandler) {
-    (page as any)._hasAutoDialogHandler = true;
-    page.on('dialog', async (d: any) => {
-      console.log(`[SMART-DIALOG] Tự động accept browser dialog: "${d.message()}"`);
-      await d.accept().catch(() => {});
-    });
-  }
+  installDialogAutoAccept(page);
   await waitForDialogIfOpen(primary, opts);
   const fastTimeout = opts.fastTimeout ?? FAST_TIMEOUT_MS;
   const isOption = opts.role === 'option' || (opts.name && /option/i.test(opts.name));

@@ -1,4 +1,4 @@
-generatedAt: '2026-09-25T11:38:05.611Z'
+generatedAt: '2026-10-02T03:15:27.273Z'
 origin: reverse-grounding
 description: >-
   Live-grounded UI components reverse-extracted from Playwright codegen recordings (tests/recordings/<KEY>.recording.ts)
@@ -10,7 +10,7 @@ recordings:
   - key: CREATE_RISK_REQUEST
     recording: tests/recordings/functions/CREATE_RISK_REQUEST.recording.ts
     entryUrl: https://bpm-qa.eon.com/dev_cybersec12/EON_LDAP/CyberSec
-    syncedAt: '2026-09-25T11:38:05.610Z'
+    syncedAt: '2026-10-02T03:15:27.273Z'
     componentCount: 30
     components:
       - locatorType: css

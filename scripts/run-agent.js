@@ -17,6 +17,15 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { runCli } = require('./lib/cli-runner');
+const {
+  collectInteractiveElements,
+  parseAiActionJson,
+  isSsoUrl,
+  resolveBinary,
+  waitAjaxIdle,
+  maximizeWindow,
+  ssoHandoff,
+} = require('./lib/agent-dom');
 const dotenv = require('dotenv');
 const { chromium } = require('@playwright/test');
 
@@ -101,19 +110,6 @@ function loadPom(key) {
   return null;
 }
 
-function resolveBinary(command) {
-  if (!IS_WINDOWS) return command;
-  const pathExt = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
-  const pathDirs = (process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean);
-  for (const dir of pathDirs) {
-    for (const ext of pathExt) {
-      const candidate = path.join(dir, `${command}${ext}`);
-      if (fs.existsSync(candidate)) return `${command}${ext}`;
-    }
-  }
-  return null;
-}
-
 function parseKey(arg) {
   if (!arg) return null;
   let value = String(arg).trim();
@@ -122,10 +118,6 @@ function parseKey(arg) {
   value = value.replace(/^TC-/i, '');
   const match = value.match(/([A-Za-z0-9_-]+)/);
   return match ? match[1].toUpperCase() : null;
-}
-
-function isSsoUrl(url) {
-  return /login\.microsoftonline\.com|login\.microsoft\.com|login\.live\.com|login\.windows\.net|sts\.|\/adfs\/|\/oauth2\//i.test(url);
 }
 
 function loadConfig() {
@@ -244,70 +236,9 @@ async function invokeAgentCli(promptText, activeCli, config, logFile) {
 
 // ============================================================================
 // 🤖 AUTONOMOUS AI RECOVERY — helpers
-// Thu thập ngữ cảnh UI (element tương tác được), parse JSON hành động do AI trả
-// về, và thực thi hành động cứu nguy (click/fill) bằng Playwright.
+// Thu thập ngữ cảnh UI (element tương tác được) & parse JSON hành động dùng chung
+// từ scripts/lib/agent-dom.js. Thực thi hành động cứu nguy (click/fill) bằng Playwright.
 // ============================================================================
-
-// Thu thập danh sách các element tương tác được (button, link, input, select,
-// textarea, label, option) đang HIỂN THỊ trên một page/frame — kèm tag, text,
-// id, class để AI Agent có đủ ngữ cảnh xác định element thay thế.
-async function collectInteractiveElements(scope) {
-  try {
-    return await scope.evaluate(() => {
-      const SEL = 'button, a, input, select, textarea, label, option, ' +
-        '[role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="link"]';
-      const out = [];
-      const nodes = Array.from(document.querySelectorAll(SEL)).slice(0, 400);
-      for (const el of nodes) {
-        const rect = el.getBoundingClientRect();
-        if (!(rect.width > 0 && rect.height > 0)) continue;
-        const text = (
-          el.innerText || el.value || el.getAttribute('aria-label') ||
-          el.getAttribute('placeholder') || el.title || ''
-        ).replace(/\s+/g, ' ').trim().slice(0, 80);
-        const cls = (typeof el.className === 'string' ? el.className : '').trim().slice(0, 80);
-        const item = { tag: el.tagName.toLowerCase(), text };
-        const type = el.getAttribute('type');
-        if (type) item.type = type;
-        if (el.id) item.id = el.id;
-        if (cls) item.class = cls;
-        if (!text && !el.id) continue;
-        out.push(item);
-      }
-      return out;
-    });
-  } catch (_) {
-    return [];
-  }
-}
-
-// Parse chuỗi JSON hành động {"action","target","value"} từ output của AI Agent,
-// chịu được trường hợp AI trả kèm văn bản / code-fence bao quanh.
-function parseAiActionJson(text) {
-  if (!text) return null;
-  const tryParse = (raw) => {
-    try {
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === 'object' && obj.action) return obj;
-    } catch (_) {}
-    return null;
-  };
-
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) {
-    const hit = tryParse(fence[1].trim());
-    if (hit) return hit;
-  }
-
-  const objs = text.match(/\{[^{}]*"action"[^{}]*\}/g);
-  if (objs) {
-    for (let i = objs.length - 1; i >= 0; i--) {
-      const hit = tryParse(objs[i]);
-      if (hit) return hit;
-    }
-  }
-  return null;
-}
 
 // Thực thi hành động cứu nguy do AI chỉ định trên taskFrame (scope) hoặc page.
 // Thử nhiều chiến lược locator (selector thô, role, text, label, placeholder).
@@ -397,18 +328,6 @@ async function fillPrimeFacesDropdown(scope, menuId) {
       .first();
     await openPanelOption.click({ timeout: 5000 });
   }
-}
-
-// Chờ PrimeFaces AJAX-indicator biến mất (giống hệt các method trong POM) để tránh
-// click vào lúc form đang re-render → locator "biến mất" gây timeout.
-async function waitAjaxIdle(page) {
-  if (!page) return;
-  try {
-    const ajaxIndicator = page
-      .locator('.ajax-status-position, [id*="ajax-indicator-ajax-indicator"]')
-      .first();
-    await ajaxIndicator.waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});
-  } catch (_) {}
 }
 
 // Chọn dropdown Likelihood theo chỉ số câu hỏi (riskAnswer_<idx>) — dùng cho các
@@ -661,14 +580,7 @@ async function main() {
   const context = await browser.newContext(contextOpts);
   const page = await context.newPage();
 
-  try {
-    const cdp = await context.newCDPSession(page);
-    const { windowId } = await cdp.send('Browser.getWindowForTarget');
-    await cdp.send('Browser.setWindowBounds', {
-      windowId,
-      bounds: { windowState: 'maximized' },
-    });
-  } catch (_) {}
+  await maximizeWindow(context, page);
 
   page.on('dialog', async (d) => {
     console.log(`  \x1b[35m[AI Dialog]\x1b[0m Auto accepting: "${d.message().slice(0, 80)}"`);
@@ -686,19 +598,9 @@ async function main() {
   if (isSsoUrl(page.url())) {
     console.log('\n\x1b[33m[SSO HAND-OFF] Phát hiện trang đăng nhập Microsoft Azure AD / MFA.\x1b[0m');
     console.log('\x1b[33m-> Tester vui lòng đăng nhập & xác thực MFA trên cửa sổ trình duyệt (chờ 120s)...\x1b[0m');
-    const deadline = Date.now() + 120000;
-    let loggedIn = false;
-    while (Date.now() < deadline) {
-      if (!isSsoUrl(page.url()) && page.url().includes('bpm-qa.eon.com')) {
-        loggedIn = true;
-        break;
-      }
-      await page.waitForTimeout(1500);
-    }
+    const loggedIn = await ssoHandoff(page, context, { authFile: AUTH_FILE, timeoutMs: 120000 });
     if (loggedIn) {
-      console.log('\n\x1b[32m✔ Đăng nhập thành công! Đang lưu session mới vào .auth/user.json...\x1b[0m');
-      fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
-      await context.storageState({ path: AUTH_FILE });
+      console.log('\n\x1b[32m✔ Đăng nhập thành công! Đã lưu session mới vào .auth/user.json.\x1b[0m');
     } else {
       console.error('\n\x1b[31m[ERROR] Hết thời gian chờ đăng nhập SSO (120s). Dừng thực thi.\x1b[0m');
       await browser.close();
@@ -725,22 +627,27 @@ async function main() {
   const pom = new PomClass(page);
 
   // Tìm task frame (frame quy trình) hiện tại — nơi phần lớn form được render.
+  // Rule thực chiến: ưu tiên frame có URL chứa 'de.eon.itsp.riskassessment' (ổn định theo
+  // nghiệp vụ), rồi tới match 'task'/'process'.
   const getTaskFrame = () => {
     for (const fr of page.frames()) {
-      if (/task|process/i.test(fr.url())) return fr;
+      if (fr.url().includes('de.eon.itsp.riskassessment')) return fr;
+    }
+    for (const fr of page.frames()) {
+      if (/riskassessment|task|process/i.test(fr.url())) return fr;
     }
     return null;
   };
 
-  // Trả về ĐÚNG Frame nằm sau iframe[title="Task frame"] (cùng iframe mà POM dùng)
-  // để các thao tác cần scope.evaluate (autoFillInvalidFields) chạy trên đúng DOM.
-  // Ưu tiên contentFrame() của iframe thật, fallback về match URL rồi tới page.
+  // Trả về ĐÚNG Frame nằm sau iframe nghiệp vụ (cùng iframe mà POM dùng) để các thao tác
+  // cần scope.evaluate (autoFillInvalidFields) chạy trên đúng DOM.
+  // Ưu tiên khớp URL pattern Risk Assessment, fallback iframe[title="Task frame"], rồi page.
   const resolveTaskFrame = async () => {
     try {
-      const handle = await page.waitForSelector('iframe[title="Task frame"]', {
-        state: 'attached',
-        timeout: 5000,
-      });
+      const handle = await page.waitForSelector(
+        'iframe[src*="de.eon.itsp.riskassessment"], iframe[src*="riskassessment"], iframe[title="Task frame"]',
+        { state: 'attached', timeout: 5000 }
+      );
       const f = handle ? await handle.contentFrame() : null;
       if (f) return f;
     } catch (_) {}

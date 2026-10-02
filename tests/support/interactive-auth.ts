@@ -22,6 +22,7 @@
 import { Page, Locator, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { safeNavigate, installDialogAutoAccept } from './frame';
 
 /** Đường dẫn lưu storageState (cookies + localStorage) phiên đã đăng nhập. */
 export const AUTH_FILE = path.resolve(process.cwd(), '.auth', 'user.json');
@@ -150,10 +151,13 @@ export async function ensureInteractiveAuth(
   const saveState = options.saveState !== false;
   const baseHost = hostOf(baseUrl);
 
+  // Rule thực chiến: giữ nguyên tab + SSO session, auto-accept beforeunload toàn cục.
+  installDialogAutoAccept(page);
+
   const currentUrl = page.url();
   const alreadyOnApp = currentUrl && !currentUrl.startsWith('about:blank') && currentUrl.includes('CyberSec');
   if (!alreadyOnApp) {
-    await page.goto(baseUrl).catch(() => undefined);
+    await safeNavigate(page, baseUrl).catch(() => undefined);
     // Cho các redirect client-side kịp chạy (Ivy portal + Azure AD).
     await page.waitForTimeout(1000);
   }
@@ -161,7 +165,9 @@ export async function ensureInteractiveAuth(
   if (options.readyLocator) {
     const already = await options.readyLocator.isVisible().catch(() => false);
     if (already && !(await isOnLoginScreen(page))) {
-      return; // Đã đăng nhập sẵn, không cần hand-off.
+      // Đã đăng nhập sẵn: tranh thủ làm tươi storageState để gia hạn phiên tái sử dụng.
+      if (saveState) await saveStorageState(page).catch(() => undefined);
+      return; // Không cần hand-off.
     }
   }
 
@@ -174,6 +180,8 @@ export async function ensureInteractiveAuth(
         .waitFor({ state: 'visible', timeout: 10000 })
         .catch(() => undefined);
     }
+    // Làm tươi storageState để lần chạy sau vẫn tái sử dụng được phiên (sliding session).
+    if (saveState) await saveStorageState(page).catch(() => undefined);
     return;
   }
 
